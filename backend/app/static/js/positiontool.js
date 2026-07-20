@@ -52,6 +52,7 @@ SM._updatePositionRects = function () {
   p.rectStop.setBounds(p.entryTimeUnix, p.exitTimeUnix, p.stopPrice, p.entryPrice);
   SM._updatePositionOverlay();
   SM._commitPositionToForm();
+  SM._updateOrbBreakoutResults();
 };
 
 SM.clearPosition = function () {
@@ -61,6 +62,59 @@ SM.clearPosition = function () {
   }
   SM.position = null;
   SM._hidePositionOverlay();
+  const el = SM.$('posOrbResults');
+  if (el) el.style.display = 'none';
+};
+
+// ---------- ORB-Durchbruch-Ergebnisse (R-Multiple, sobald der Kurs waehrend
+// des Entry-Tages ueber eine der M5/M15/M30-Opening-Range-Hochs ausbricht) ----------
+// Durchbruch bezieht sich per Konvention immer auf dieselbe Session wie die
+// Opening Range selbst - deshalb Suche nur in orbState.dayBars (M5-Kerzen des
+// Drilldown-Tages), nicht ueber Tagesgrenzen hinweg.
+
+SM._ensureOrbResultsEl = function () {
+  let el = SM.$('posOrbResults');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'posOrbResults';
+    el.className = 'pos-overlay-label pos-orb-results';
+    SM.$('chartContainer').appendChild(el);
+  }
+  return el;
+};
+
+SM._updateOrbBreakoutResults = function () {
+  const el = SM._ensureOrbResultsEl();
+  const p = SM.position;
+  const windows = SM.orbState && SM.orbState.windows;
+  const dayBars = (SM.orbState && SM.orbState.dayBars) || [];
+  if (!p || !windows || !dayBars.length) { el.style.display = 'none'; return; }
+  const riskUnit = p.entryPrice - p.stopPrice;
+  if (riskUnit <= 0) { el.style.display = 'none'; return; }
+  const labels = { m5: 'M5', m15: 'M15', m30: 'M30' };
+  const rows = [];
+  for (const key of ['m5', 'm15', 'm30']) {
+    const w = windows[key];
+    if (!w) continue;
+    const hit = dayBars.find((b) => {
+      const t = SM.toUnixTime(b.time);
+      return t >= p.entryTimeUnix && t <= p.exitTimeUnix && b.high >= w.high;
+    });
+    if (hit) {
+      const r = (w.high - p.entryPrice) / riskUnit;
+      rows.push(`${labels[key]}-ORB-Break @ ${hit.time.slice(11, 16)}: ${r >= 0 ? '+' : ''}${r.toFixed(2)}R`);
+    } else {
+      rows.push(`${labels[key]}-ORB-Break: noch nicht erreicht`);
+    }
+  }
+  const ts = SM.chartState.chart.timeScale();
+  const x = ts.timeToCoordinate(p.entryTimeUnix);
+  const y = SM.chartState.candleSeries.priceToCoordinate(p.targetPrice);
+  if (x == null || y == null) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.left = x + 'px';
+  el.style.top = Math.max(0, y - 68) + 'px';
+  el.innerHTML = rows.join('<br>');
 };
 
 // ---------- DOM-Overlay (Zielbox/Stopbox/Tooltip als einfache <div>s, kein Canvas-Text) ----------

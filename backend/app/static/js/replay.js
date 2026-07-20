@@ -41,6 +41,7 @@ SM._replayRedraw = function () {
   const visible = cs.bars.slice(0, SM.replay.revealIndex + 1);
   cs.candleSeries.setData(SM.barsToSeriesData(visible));
   cs.volumeSeries.setData(SM.volumeToSeriesData(visible));
+  SM.renderExtendedHoursShading(visible);
   const cutoffUnix = visible.length ? SM.toUnixTime(visible[visible.length - 1].time) : -Infinity;
   for (const key of Object.keys(cs.lineSeries)) {
     const pts = (cs.indicators[key] || []).filter((p) => SM.toUnixTime(p.time) <= cutoffUnix);
@@ -91,6 +92,15 @@ SM.replayTick = function () {
 };
 
 SM.replayStep = function () { if (!SM.replay.playing) SM.replayTick(); };
+
+SM.replayStepBack = function () {
+  if (SM.replay.playing) SM.replayPause();
+  if (SM.replay.revealIndex <= 0) return;
+  SM.replay.revealIndex--;
+  SM.replay.positionTime = SM.chartState.bars[SM.replay.revealIndex].time;
+  SM._replayRedraw();
+  SM.updateReplayPosLabel();
+};
 
 // Kennzahlen-Panel lebt mit der Replay-Position mit: bei jedem Fortschritt
 // (Start/Tick/Schritt) wird automatisch, entprellt, derselbe bestehende,

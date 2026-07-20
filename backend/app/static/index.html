@@ -30,6 +30,7 @@
     <div id="chartContainer" class="chart-container"></div>
     <div id="replayBar" class="replay-bar hidden">
       <button id="replayPlay" title="Play/Pause">▶</button>
+      <button id="replayStepBack" title="Ein Schritt zurueck">⏮ Zurueck</button>
       <button id="replayStep" title="Ein Schritt vorwaerts">⏭ Schritt</button>
       <label class="hint">Geschwindigkeit
         <select id="replaySpeed">
@@ -53,7 +54,7 @@
       <button id="btnBackToDaily" class="hidden" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
       <span id="replayPos" class="replay-pos hint"></span>
     </div>
-    <p class="hint">Replay: Kerze anklicken = Startpunkt. Danach Play/Pause/Schritt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen.</p>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Danach Play/Pause/Schritt/Zurueck. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20).</p>
   </section>
 
   <aside class="sidebar">
@@ -79,7 +80,8 @@
       <label>Pivot<input id="pivot_level_price" type="number" step="0.01" size="7"></label><br>
       <textarea id="notes" placeholder="Freitextnotiz" rows="3"></textarea><br>
       <button id="btnSaveLabel">Label speichern</button>
-      <p class="hint">Ergebnis/MFE/MAE werden gespeichert, aber laut Datenpolitik nicht als Modell-Input verwendet. "Setup hier markieren" im Replay laedt zuerst die Look-ahead-sicheren Kennzahlen fuer diesen Zeitpunkt.</p>
+      <button id="btnCancelLabel" class="btn-secondary">Abbrechen</button>
+      <p class="hint">Ergebnis/MFE/MAE werden gespeichert, aber laut Datenpolitik nicht als Modell-Input verwendet. "Setup hier markieren" im Replay laedt zuerst die Look-ahead-sicheren Kennzahlen fuer diesen Zeitpunkt. "Abbrechen" verwirft nur den noch ungespeicherten Entwurf; bereits gespeicherte Labels loescht du über das ✕ in der Tabelle "Letzte Labels".</p>
     </div>
   </aside>
 </main>
@@ -112,6 +114,7 @@
 <script src="/static/js/labels.js"></script>
 <script src="/static/js/importexport.js"></script>
 <script src="/static/js/drilldown.js"></script>
+<script src="/static/js/marketstate.js"></script>
 <script src="/static/js/settingspanel.js"></script>
 <script src="/static/js/app.js"></script>
 </body></html>

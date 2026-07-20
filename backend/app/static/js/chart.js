@@ -82,7 +82,41 @@ SM.renderFull = function (bars, indicators) {
   for (const key of Object.keys(cs.lineSeries)) {
     cs.lineSeries[key].setData(SM.indicatorToSeriesData((indicators || {})[key]));
   }
+  SM.renderExtendedHoursShading(bars);
   cs.chart.timeScale().fitContent();
+};
+
+// Ausserboersliche Zeiten (Vor-/Nachboerse) farblich hinterlegen - nur auf der
+// nativen 5m-Zeitebene vorhanden (is_regular_session-Flag kommt aus der
+// all-sessions-Breitband-Abfrage, siehe market_data.py). Zusammenhaengende
+// Laeufe werden zu je einem Band zusammengefasst statt pro Kerze ein eigenes
+// Primitive anzulegen (Performance bei mehrtägigen Bereichen).
+SM.extendedHoursBands = [];
+
+SM.renderExtendedHoursShading = function (bars) {
+  const cs = SM.chartState;
+  SM.extendedHoursBands.forEach((b) => cs.candleSeries.detachPrimitive(b));
+  SM.extendedHoursBands = [];
+  if (!bars.length || bars[0].is_regular_session === undefined) return;
+  let runStart = null, runEnd = null;
+  const flush = () => {
+    if (runStart == null) return;
+    const band = new SM.VerticalBandPrimitive({ fillColor: 'rgba(120,150,220,0.07)' });
+    cs.candleSeries.attachPrimitive(band);
+    band.setRange(runStart, runEnd);
+    SM.extendedHoursBands.push(band);
+    runStart = null;
+  };
+  for (const b of bars) {
+    const t = SM.toUnixTime(b.time);
+    if (b.is_regular_session === 0) {
+      if (runStart == null) runStart = t;
+      runEnd = t + 300; // Ende dieser 5m-Kerze
+    } else {
+      flush();
+    }
+  }
+  flush();
 };
 
 // Additive Preislinien-Verwaltung nach Gruppe (z.B. 'pdhpdl' vs 'orb'), damit

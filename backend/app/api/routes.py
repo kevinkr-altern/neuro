@@ -10,8 +10,8 @@ from app.providers.eodhd import check_m5, EodhdError
 from app.services.market_data import (
     ensure_m5, ensure_daily_history, ensure_weekly_history, ensure_m5_history, ensure_m5_earliest,
     ensure_splits_history,
-    intraday_bars, intraday_bars_range, daily_bars_range, weekly_bars_range, indicator_series,
-    compute_metrics, DAILY_HISTORY_FLOOR,
+    intraday_bars, intraday_bars_range, intraday_bars_range_all_sessions, daily_bars_range, weekly_bars_range,
+    indicator_series, compute_metrics, DAILY_HISTORY_FLOOR,
 )
 
 router = APIRouter()
@@ -128,7 +128,13 @@ async def chart_data(ticker: str, timeframe: str = '1d', date_from: str | None =
             m5_info = await ensure_m5_earliest(ticker)
             date_from = date_from or (m5_info['m5_history_start'] or today)
             await ensure_m5_history(ticker, date_from, date_to)
-            bars = intraday_bars_range(ticker, date_from, date_to, timeframe)
+            # Native 5m-Ansicht bekommt auch Vor-/Nachbörse-Kerzen (fuers Frontend-
+            # Hinterlegen ausserboerslicher Zeiten) - aggregierte Zeitebenen (15m/30m/1h)
+            # bleiben bei der reinen Regular-Session-Aggregation.
+            if timeframe == '5m':
+                bars = intraday_bars_range_all_sessions(ticker, date_from, date_to)
+            else:
+                bars = intraday_bars_range(ticker, date_from, date_to, timeframe)
     except EodhdError as e:
         raise HTTPException(400, str(e))
     indicators = indicator_series(bars)
@@ -190,6 +196,17 @@ def create_label(s: SetupIn):
 def labels():
     with conn() as c:
         return [dict(r) for r in c.execute("select setups.*, symbols.ticker from setups join symbols on symbols.id=setups.symbol_id order by setups.created_at desc")]
+
+@router.delete('/labels/{setup_id}')
+def delete_label(setup_id: int):
+    with conn() as c:
+        row = c.execute("select id from setups where id=?", (setup_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, f'Label {setup_id} nicht gefunden.')
+        c.execute("delete from setup_markers where setup_id=?", (setup_id,))
+        c.execute("delete from playback_sessions where setup_id=?", (setup_id,))
+        c.execute("delete from setups where id=?", (setup_id,))
+    return {'deleted': setup_id}
 
 # ---------- Marker (mit Zeit-Validierung gegen Look-ahead) ----------
 
