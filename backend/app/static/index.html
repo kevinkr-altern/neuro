@@ -88,6 +88,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="metrics">Kennzahlen</button>
       <button class="tab-btn" data-tab="label">Label</button>
+      <button class="tab-btn" data-tab="watchlist">Watchlist</button>
     </div>
     <div class="tab-panel" id="tabMetrics">
       <div id="metrics" class="metrics-grid"></div>
@@ -109,6 +110,16 @@
       <button id="btnSaveLabel">Label speichern</button>
       <button id="btnCancelLabel" class="btn-secondary">Abbrechen</button>
       <p class="hint">Ergebnis/MFE/MAE werden gespeichert, aber laut Datenpolitik nicht als Modell-Input verwendet. "Setup hier markieren" im Replay laedt zuerst die Look-ahead-sicheren Kennzahlen fuer diesen Zeitpunkt. "Abbrechen" verwirft nur den noch ungespeicherten Entwurf; bereits gespeicherte Labels loescht du über das ✕ in der Tabelle "Letzte Labels".</p>
+    </div>
+    <div class="tab-panel hidden" id="tabWatchlist">
+      <div class="watchlist-add">
+        <input id="wlTicker" placeholder="Ticker" size="8" autocomplete="off">
+        <input id="wlCategory" placeholder="Kategorie (z.B. Prime)" list="wlCategoryList" autocomplete="off">
+        <datalist id="wlCategoryList"></datalist>
+        <button id="btnWlAdd">+ Hinzufuegen</button>
+      </div>
+      <div id="watchlistGroups"></div>
+      <p class="hint">Ticker anklicken laedt ihn in den Chart. Kategorie frei eintippen (bereits verwendete werden vorgeschlagen).</p>
     </div>
   </aside>
 </main>
@@ -145,6 +156,7 @@
 <script src="/static/js/minichart.js"></script>
 <script src="/static/js/marketstate.js"></script>
 <script src="/static/js/minervini.js"></script>
+<script src="/static/js/watchlist.js"></script>
 <script src="/static/js/settingspanel.js"></script>
 <script src="/static/js/app.js"></script>
 </body></html>

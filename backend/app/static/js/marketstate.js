@@ -44,7 +44,7 @@ SM.refreshMarketStateStrip = async function () {
   }
   if (!SM.chartState.candleSeries) return;
   if (!SM.marketStateStrip) {
-    SM.marketStateStrip = new SM.TopStripPrimitive({ heightPx: 4 });
+    SM.marketStateStrip = new SM.TopStripPrimitive({ heightPx: 8 });
     SM.chartState.candleSeries.attachPrimitive(SM.marketStateStrip);
   }
   SM.marketStateStrip.setSegments(segments);

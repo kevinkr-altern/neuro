@@ -63,12 +63,20 @@ SM._loadMiniDay = async function (date) {
   } catch (e) { SM.showErr(e.message); }
 };
 
+// Mindestens so viele Kerzenbreiten sichtbar wie bei einem "normalen"
+// Chart-Ausschnitt - ohne das wuerden am Anfang eines Tages (z.B. nur 1-2
+// aufgedeckte Kerzen) die wenigen Kerzen auf die volle Breite gestreckt und
+// wirkten riesig/verzerrt. fitContent() wuerde genau das tun, deshalb
+// stattdessen ein logisches Fenster mit fester Mindestbreite.
+SM.MINI_MIN_VISIBLE_BARS = 12;
+
 SM._miniRedraw = function () {
   const mc = SM.miniChart;
   const visible = SM.miniReplay.bars.slice(0, SM.miniReplay.revealIndex + 1);
   mc.candleSeries.setData(SM.barsToSeriesData(visible));
   mc.volumeSeries.setData(SM.volumeToSeriesData(visible));
-  mc.chart.timeScale().fitContent();
+  const to = Math.max(SM.miniReplay.revealIndex + 2, SM.MINI_MIN_VISIBLE_BARS - 1);
+  mc.chart.timeScale().setVisibleLogicalRange({ from: -1, to });
   SM._miniSyncScrub();
 };
 

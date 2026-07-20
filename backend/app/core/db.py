@@ -48,6 +48,8 @@ def init_db():
         create table if not exists import_rows(batch_id integer, row_number integer, raw_json text, status text, error_message text);
         create table if not exists playback_sessions(id integer primary key, setup_id integer, symbol_id integer, entry_date text, cutoff_timestamp text, was_playback_enforced integer default 1, created_at text default current_timestamp);
         create table if not exists fundamental_snapshots(id integer primary key, symbol_id integer, as_of_date text, market_cap real, float_shares real, shares_outstanding real, source text, created_at text default current_timestamp);
+        create table if not exists watchlist_items(id integer primary key, ticker text not null, category text not null default 'Watchlist', created_at text default current_timestamp);
+        create unique index if not exists ux_watchlist_ticker_category on watchlist_items(ticker, category);
         ''')
         # Neue setups-Spalten fuer Bestands-DBs nachziehen.
         have = {r[1] for r in c.execute("pragma table_info(setups)")}
