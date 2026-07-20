@@ -80,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
   SM.$('replayPlay').addEventListener('click', () => { SM.replay.playing ? SM.replayPause() : SM.replayPlay(); });
   SM.$('replayStepBack').addEventListener('click', SM.replayStepBack);
   SM.$('replayStep').addEventListener('click', SM.replayStep);
+  SM.$('replayScrub').addEventListener('input', (e) => SM.replayJumpTo(+e.target.value));
   SM.$('replaySpeed').addEventListener('change', (e) => {
     SM.replay.speedMs = +e.target.value;
     if (SM.replay.playing) { SM.replayPause(); SM.replayPlay(); }
@@ -123,6 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+    // Schnelle Replay-Navigation per Pfeiltasten/Leertaste (nur bei aktivem Replay).
+    if (SM.replay.active && SM.replay.revealIndex >= 0) {
+      if (e.key === 'ArrowRight') { e.preventDefault(); SM.replayStep(); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); SM.replayStepBack(); return; }
+      if (e.key === ' ') { e.preventDefault(); SM.replay.playing ? SM.replayPause() : SM.replayPlay(); return; }
+    }
     const map = { e: 'entry', x: 'exit', s: 'stop', p: 'pivot' };
     const type = map[e.key.toLowerCase()];
     if (!type) return;
@@ -146,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
   SM.$('btnListBackups').addEventListener('click', SM.listBackups);
 
   SM.buildLabelForm();
+  SM.fillMetricsTable();
   SM.loadLabels();
   SM.loadTicker('1d');
   SM.checkM5Earliest(SM.$('ticker').value.trim().toUpperCase());

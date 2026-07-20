@@ -27,34 +27,42 @@
 
 <main class="layout">
   <section class="chart-col">
-    <div id="chartContainer" class="chart-container"></div>
+    <div id="chartContainer" class="chart-container">
+      <div id="chartLegend" class="chart-legend"></div>
+      <div id="quickStats" class="quick-stats"></div>
+    </div>
     <div id="replayBar" class="replay-bar hidden">
-      <button id="replayPlay" title="Play/Pause">▶</button>
-      <button id="replayStepBack" title="Ein Schritt zurueck">⏮ Zurueck</button>
-      <button id="replayStep" title="Ein Schritt vorwaerts">⏭ Schritt</button>
-      <label class="hint">Geschwindigkeit
-        <select id="replaySpeed">
+      <div class="replay-row">
+        <button id="replayStepBack" class="icon-btn" title="Ein Schritt zurueck (Pfeil links)">⏮</button>
+        <button id="replayPlay" class="icon-btn primary" title="Play/Pause (Leertaste)">▶</button>
+        <button id="replayStep" class="icon-btn" title="Ein Schritt vorwaerts (Pfeil rechts)">⏭</button>
+        <input id="replayScrub" class="replay-scrub" type="range" min="0" max="0" value="0" title="Schnell springen">
+        <span id="replayCount" class="replay-count"></span>
+        <select id="replaySpeed" title="Geschwindigkeit">
           <option value="2000">0.5x</option>
           <option value="1000" selected>1x</option>
           <option value="500">2x</option>
           <option value="250">4x</option>
           <option value="125">8x</option>
         </select>
-      </label>
-      <span class="marker-toggle">
-        Marker:
-        <button data-marker="entry" title="Taste E">E Entry</button>
-        <button data-marker="exit" title="Taste X">X Exit</button>
-        <button data-marker="stop" title="Taste S">S Stop</button>
-        <button data-marker="pivot" title="Taste P">P Pivot</button>
-      </span>
-      <button id="btnPositionTool" title="Position platzieren: klicken und im Chart ziehen">Position-Tool</button>
-      <button id="btnClearPosition" title="Positions-Werkzeug entfernen">✕ Position</button>
-      <button id="btnMarkSetup">Setup hier markieren</button>
-      <button id="btnBackToDaily" class="hidden" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
-      <span id="replayPos" class="replay-pos hint"></span>
+        <span id="replayPos" class="replay-pos"></span>
+      </div>
+      <div class="replay-row tools">
+        <span class="marker-toggle">
+          Marker:
+          <button data-marker="entry" title="Taste E">E</button>
+          <button data-marker="exit" title="Taste X">X</button>
+          <button data-marker="stop" title="Taste S">S</button>
+          <button data-marker="pivot" title="Taste P">P</button>
+        </span>
+        <button id="btnPositionTool" title="Position platzieren: klicken und im Chart ziehen">Position-Tool</button>
+        <button id="btnClearPosition" class="btn-secondary" title="Positions-Werkzeug entfernen">✕ Position</button>
+        <button id="btnMarkSetup">Setup hier markieren</button>
+        <button id="btnBackToDaily" class="hidden btn-secondary" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
+        <span class="kbd-hint">Navigation: <kbd>←</kbd> <kbd>→</kbd> Schritt, <kbd>Leertaste</kbd> Play/Pause, Scrubber = schnell springen</span>
+      </div>
     </div>
-    <p class="hint">Replay: Kerze anklicken = Startpunkt. Danach Play/Pause/Schritt/Zurueck. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20).</p>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20).</p>
   </section>
 
   <aside class="sidebar">
@@ -63,7 +71,7 @@
       <button class="tab-btn" data-tab="label">Label</button>
     </div>
     <div class="tab-panel" id="tabMetrics">
-      <table class="kv mono"><tbody id="metrics"></tbody></table>
+      <div id="metrics" class="metrics-grid"></div>
     </div>
     <div class="tab-panel hidden" id="tabLabel">
       <p><b>Name:</b> <span id="setupName" class="ok"></span></p>

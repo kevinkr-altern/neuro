@@ -70,7 +70,41 @@ SM.initChart = function (container) {
   SM.chartState.volumeSeries = volumeSeries;
   SM.chartState.lineSeries = lineSeries;
   SM.chartState.markersApi = markersApi;
+
+  // Crosshair-Legende (O/H/L/C/Vol der Kerze unter dem Mauszeiger, sonst die
+  // letzte sichtbare Kerze) - direkt am Chart sichtbar, kein Tab-Wechsel noetig.
+  chart.subscribeCrosshairMove((param) => SM.updateChartLegend(param));
   return chart;
+};
+
+SM.fmtVol = function (v) {
+  if (v == null) return '—';
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+  return String(Math.round(v));
+};
+
+SM.updateChartLegend = function (param) {
+  const el = document.getElementById('chartLegend');
+  if (!el) return;
+  const cs = SM.chartState;
+  let bar = null;
+  if (param && param.time) {
+    bar = cs.bars.find((b) => SM.toUnixTime(b.time) === param.time);
+  }
+  if (!bar) bar = cs.bars.length ? cs.bars[cs.bars.length - 1] : null;
+  if (!bar) { el.innerHTML = ''; return; }
+  const cls = bar.close >= bar.open ? 'up' : 'down';
+  const chg = bar.open ? ((bar.close - bar.open) / bar.open * 100) : null;
+  const ticker = (SM.$('ticker') && SM.$('ticker').value || '').toUpperCase();
+  el.innerHTML = `<span class="lg-ticker">${ticker}</span><span>${(bar.time || '').replace('T', ' ').slice(0, 16)}</span>` +
+    `<span>O <b>${bar.open != null ? bar.open.toFixed(2) : '—'}</b></span>` +
+    `<span>H <b>${bar.high != null ? bar.high.toFixed(2) : '—'}</b></span>` +
+    `<span>L <b>${bar.low != null ? bar.low.toFixed(2) : '—'}</b></span>` +
+    `<span class="${cls}">C <b>${bar.close != null ? bar.close.toFixed(2) : '—'}</b></span>` +
+    (chg != null ? `<span class="${cls}"><b>${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</b></span>` : '') +
+    `<span>Vol <b>${SM.fmtVol(bar.volume)}</b></span>`;
 };
 
 SM.renderFull = function (bars, indicators) {
@@ -83,6 +117,7 @@ SM.renderFull = function (bars, indicators) {
     cs.lineSeries[key].setData(SM.indicatorToSeriesData((indicators || {})[key]));
   }
   SM.renderExtendedHoursShading(bars);
+  SM.updateChartLegend(null);
   cs.chart.timeScale().fitContent();
 };
 
