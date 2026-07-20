@@ -6,7 +6,7 @@ SM.TF_SECONDS = { '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '1d': 86400, '
 
 SM.chartState = {
   chart: null, candleSeries: null, volumeSeries: null,
-  lineSeries: {}, priceLines: [], markersApi: null,
+  lineSeries: {}, markersApi: null,
   bars: [], indicators: {}, timeframe: '1d',
 };
 
@@ -19,9 +19,10 @@ SM.barsToSeriesData = function (bars) {
 };
 
 SM.volumeToSeriesData = function (bars) {
+  const colors = SM.chartState.volumeSeriesColors || { up: 'rgba(85,217,141,0.5)', down: 'rgba(255,107,107,0.5)' };
   return bars.map((b) => ({
     time: SM.toUnixTime(b.time), value: b.volume || 0,
-    color: b.close >= b.open ? 'rgba(85,217,141,0.5)' : 'rgba(255,107,107,0.5)',
+    color: b.close >= b.open ? colors.up : colors.down,
   }));
 };
 
@@ -42,20 +43,24 @@ SM.initChart = function (container) {
   const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
     upColor: '#55d98d', downColor: '#ff6b6b', borderVisible: false,
     wickUpColor: '#55d98d', wickDownColor: '#ff6b6b',
-  });
-  candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.22 } });
+  }, 0);
 
+  // Volumen in einer eigenen Pane statt einer Overlay-Preisskala im Haupt-Chart:
+  // eigene Panes haben eine eigene, per Ziehen unabhaengig skalierbare
+  // Preisskala (behebt "Volumenskala muss auch skalierbar sein").
   const volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
-    priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false,
-  });
-  volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false,
+  }, 1);
+  const panes = chart.panes();
+  if (panes[0] && panes[0].setStretchFactor) panes[0].setStretchFactor(4);
+  if (panes[1] && panes[1].setStretchFactor) panes[1].setStretchFactor(1);
 
   const lineColors = { ema10: '#ffd166', ema20: '#06d6a0', sma50: '#4dabf7', sma200: '#ff922b' };
   const lineSeries = {};
   for (const [key, color] of Object.entries(lineColors)) {
     lineSeries[key] = chart.addSeries(LightweightCharts.LineSeries, {
-      color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
-    });
+      color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
+    }, 0);
   }
 
   const markersApi = LightweightCharts.createSeriesMarkers(candleSeries, []);
@@ -80,18 +85,27 @@ SM.renderFull = function (bars, indicators) {
   cs.chart.timeScale().fitContent();
 };
 
-SM.setReferenceLines = function (lines) {
+// Additive Preislinien-Verwaltung nach Gruppe (z.B. 'pdhpdl' vs 'orb'), damit
+// verschiedene Aufrufer sich nicht gegenseitig die Linien loeschen. Jede
+// Gruppe wird bei erneutem Aufruf komplett neu gezeichnet, andere Gruppen
+// bleiben unberuehrt.
+SM.referenceLineGroups = {};
+
+SM.setReferenceLineGroup = function (groupName, lines) {
   const cs = SM.chartState;
-  for (const pl of cs.priceLines) cs.candleSeries.removePriceLine(pl);
-  cs.priceLines = [];
+  (SM.referenceLineGroups[groupName] || []).forEach((pl) => cs.candleSeries.removePriceLine(pl));
+  SM.referenceLineGroups[groupName] = [];
   for (const l of lines || []) {
     if (l.price == null) continue;
-    cs.priceLines.push(cs.candleSeries.createPriceLine({
+    SM.referenceLineGroups[groupName].push(cs.candleSeries.createPriceLine({
       price: l.price, color: l.color, lineWidth: 1,
       lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: l.title,
     }));
   }
 };
+
+// Rueckwaerts-kompatibler Alias fuer bestehende Aufrufer (labels.js: PDH/PDL/ORB-m30).
+SM.setReferenceLines = function (lines) { SM.setReferenceLineGroup('pdhpdl', lines); };
 
 SM.setMarkers = function (markers) {
   SM.chartState.markersApi.setMarkers(markers);

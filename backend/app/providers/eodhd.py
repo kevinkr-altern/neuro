@@ -39,6 +39,12 @@ async def fetch_eod(symbol: str, date_from: str, date_to: str, period: str = 'd'
     data = await _get(f"{BASE}/eod/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'from': date_from, 'to': date_to, 'period': period})
     return data if isinstance(data, list) else []
 
+async def fetch_splits(symbol: str, date_from: str, date_to: str):
+    """Split-Historie. Antwortform verifiziert gegen die echte API (nicht geraten):
+    [{'date': 'YYYY-MM-DD', 'split': 'X.xxxxxx/Y.yyyyyy'}, ...]."""
+    data = await _get(f"{BASE}/splits/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'from': date_from, 'to': date_to})
+    return data if isinstance(data, list) else []
+
 async def check_m5(symbol: str, date: str):
     start = int(datetime.fromisoformat(date + 'T13:30:00+00:00').timestamp())
     end = int(datetime.fromisoformat(date + 'T20:00:00+00:00').timestamp())

@@ -47,6 +47,9 @@ SM.loadTicker = async function (timeframe) {
 
 document.addEventListener('DOMContentLoaded', () => {
   const chart = SM.initChart(SM.$('chartContainer'));
+  SM.applyStyle(SM.loadStyle());
+  SM.buildSettingsPanel();
+  SM.$('btnSettings').addEventListener('click', SM.toggleSettingsPanel);
 
   SM.$('btnLoad').addEventListener('click', () => {
     const ticker = SM.$('ticker').value.trim().toUpperCase();
@@ -86,6 +89,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => SM.armMarker(btn.dataset.marker));
   });
 
+  SM.initPositionTool();
+  SM.$('btnPositionTool').addEventListener('click', SM.armPositionTool);
+  SM.$('btnClearPosition').addEventListener('click', SM.clearPosition);
+
   chart.subscribeClick((param) => {
     if (!param.time) return;
     const bars = SM.chartState.bars;
@@ -101,6 +108,15 @@ document.addEventListener('DOMContentLoaded', () => {
       SM.placeMarkerAtBar(bars[idx]);
     }
   });
+
+  chart.subscribeDblClick((param) => {
+    if (!param.time || !SM.replay.active || SM.chartState.timeframe !== '1d') return;
+    const bars = SM.chartState.bars;
+    const idx = bars.findIndex((b) => SM.toUnixTime(b.time) === param.time);
+    if (idx < 0 || idx > SM.replay.revealIndex) return;
+    SM.drilldownDay(SM.$('ticker').value.trim().toUpperCase(), bars[idx].time);
+  });
+  SM.$('btnBackToDaily').addEventListener('click', SM.returnToDaily);
 
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
