@@ -1,32 +1,16 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from app.core.db import conn, symbol_id
-from app.providers.eodhd import fetch_intraday, fetch_daily
-from app.indicators.formulas import enrich_daily, lod_distance_pct, rvol
+from app.providers.eodhd import fetch_intraday
+from app.indicators.formulas import wilder_atr, adr_pct, lod_distance_pct, atr_extension
 
 ET = ZoneInfo('America/New_York')
 
-def _parse_ts(row):
+def _ts(row):
     v = row.get('timestamp') or row.get('datetime') or row.get('date')
     if isinstance(v, (int, float)):
         return datetime.fromtimestamp(v, timezone.utc)
     return datetime.fromisoformat(str(v).replace('Z','+00:00')).astimezone(timezone.utc)
-
-def _eod_symbol(ticker: str):
-    return ticker.upper() if '.' in ticker else f'{ticker.upper()}.US'
-
-async def ensure_daily(ticker: str, through_date: str, lookback_days: int = 430):
-    sid = symbol_id(ticker)
-    end = datetime.fromisoformat(through_date).date()
-    start = end - timedelta(days=lookback_days)
-    with conn() as c:
-        existing = c.execute("select count(*) from price_bars_daily where symbol_id=? and date between ? and ?", (sid, start.isoformat(), end.isoformat())).fetchone()[0]
-    if existing < 200:
-        rows = await fetch_daily(_eod_symbol(ticker), start.isoformat(), end.isoformat())
-        with conn() as c:
-            for r in rows:
-                c.execute("insert or replace into price_bars_daily(symbol_id,date,open,high,low,close,adjusted_close,volume,source) values(?,?,?,?,?,?,?,?,?)", (sid, r['date'], r['open'], r['high'], r['low'], r['close'], r.get('adjusted_close'), r.get('volume',0), 'EODHD'))
-    return sid
 
 async def ensure_m5(ticker: str, date: str):
     sid = symbol_id(ticker)
@@ -35,33 +19,21 @@ async def ensure_m5(ticker: str, date: str):
     with conn() as c:
         existing = c.execute("select count(*) from price_bars_intraday where symbol_id=? and interval='5m' and substr(timestamp_utc,1,10)=?", (sid,date)).fetchone()[0]
     if existing == 0:
-        rows = await fetch_intraday(_eod_symbol(ticker), '5m', start, end)
+        rows = await fetch_intraday(ticker if '.' in ticker else f'{ticker}.US', '5m', start, end)
         with conn() as c:
             for r in rows:
-                dt = _parse_ts(r); et = dt.astimezone(ET)
-                t = et.time().isoformat()
-                regular = int(t >= '09:30:00' and t <= '16:00:00')
+                dt = _ts(r); et = dt.astimezone(ET)
+                regular = int(et.time().isoformat() >= '09:30:00' and et.time().isoformat() <= '16:00:00')
                 c.execute("insert or ignore into price_bars_intraday values(?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)", (sid, dt.isoformat(), et.isoformat(), '5m', r['open'], r['high'], r['low'], r['close'], r.get('volume',0), regular, None, 'EODHD'))
-            status='available' if rows else 'missing'
-            msg='Echte m5-Daten gefunden' if rows else 'Keine echten m5-Kerzen gefunden; keine künstlichen Daten erzeugt'
-            c.execute("insert or replace into data_availability(symbol_id,interval,first_available_at,last_available_at,status,message) values(?,?,?,?,?,?)", (sid,'5m',min([_parse_ts(r).isoformat() for r in rows], default=None),max([_parse_ts(r).isoformat() for r in rows], default=None),status,msg))
+            if rows:
+                c.execute("insert or replace into data_availability(symbol_id,interval,first_available_at,last_available_at,status,message) values(?,?,?,?,?,?)", (sid,'5m',min(_ts(r).isoformat() for r in rows),max(_ts(r).isoformat() for r in rows),'available','Echte m5-Daten gefunden'))
     return sid
 
-def daily_bars(ticker: str, through_date: str, playback: bool = True):
-    sid = symbol_id(ticker)
-    op = '<=' if playback else '<='
-    with conn() as c:
-        rows=[dict(r) for r in c.execute(f"select date, open, high, low, close, adjusted_close, volume from price_bars_daily where symbol_id=? and date {op} ? order by date", (sid, through_date))]
-    return enrich_daily(rows)
-
-def intraday_bars(ticker: str, date: str, timeframe='5m', cutoff_time: str | None = None):
+def intraday_bars(ticker: str, date: str, timeframe='5m'):
     sid = symbol_id(ticker)
     with conn() as c:
         rows = [dict(r) for r in c.execute("select timestamp_et as time, open, high, low, close, volume from price_bars_intraday where symbol_id=? and interval='5m' and substr(timestamp_utc,1,10)=? order by timestamp_utc", (sid,date))]
-    if cutoff_time:
-        rows=[r for r in rows if r['time'][11:19] <= cutoff_time]
-    if timeframe == '5m' or not rows:
-        return rows
+    if timeframe == '5m' or not rows: return rows
     n = 3 if timeframe == '15m' else 6
     out=[]
     for i in range(0,len(rows),n):
@@ -70,39 +42,9 @@ def intraday_bars(ticker: str, date: str, timeframe='5m', cutoff_time: str | Non
             out.append({'time':chunk[0]['time'],'open':chunk[0]['open'],'high':max(x['high'] for x in chunk),'low':min(x['low'] for x in chunk),'close':chunk[-1]['close'],'volume':sum(x['volume'] or 0 for x in chunk)})
     return out
 
-def metrics_for_bar(intraday, daily, index: int):
-    if not intraday or index < 0 or index >= len(intraday):
-        return {'valid': False, 'message': 'Keine Kerze selektiert'}
-    b=intraday[index]
-    d=daily[-1] if daily else {}
-    prev=daily[-2] if len(daily) >= 2 else {}
-    low_so_far=min(x['low'] for x in intraday[:index+1])
-    volume_so_far=sum((x.get('volume') or 0) for x in intraday[:index+1])
-    avg_vol50=None
-    if len(daily) > 51:
-        vols=[x.get('volume') or 0 for x in daily[-51:-1]]
-        avg_vol50=sum(vols)/len(vols)
-    return {
-        'selected_price': b['close'],
-        'low_of_day_so_far': low_so_far,
-        'atr14_dollars': prev.get('atr14'),
-        'atr_pct': prev.get('atr_pct'),
-        'lod_distance_pct': lod_distance_pct(b['close'], low_so_far, prev.get('atr14')) if prev.get('atr14') else None,
-        'lod_distance_valid': bool(prev.get('atr14')),
-        'lod_rule_valid': None if not prev.get('atr14') else lod_distance_pct(b['close'], low_so_far, prev.get('atr14')) <= 70,
-        'adr20_pct': prev.get('adr20'),
-        'adr14_pct': prev.get('adr14'),
-        'rvol_projected': rvol(volume_so_far, avg_vol50),
-        'atr_ext_sma50': prev.get('atr_ext_sma50'),
-        'atr_ext_ema10': prev.get('atr_ext_ema10'),
-        'atr_ext_ema21': prev.get('atr_ext_ema21'),
-        'dist_ema10_pct': prev.get('dist_ema10_pct'),
-        'dist_ema20_pct': prev.get('dist_ema20_pct'),
-        'dist_sma50_pct': prev.get('dist_sma50_pct'),
-        'dist_sma100_pct': prev.get('dist_sma100_pct'),
-        'dist_sma200_pct': prev.get('dist_sma200_pct'),
-        'gap_pct': ((intraday[0]['open'] - prev['close']) / prev['close'] * 100) if prev.get('close') and intraday else None,
-        'pdh': prev.get('high'),
-        'pdl': prev.get('low'),
-        'validity': {'intraday': True, 'daily_atr': bool(prev.get('atr14')), 'no_imputation': True}
-    }
+def metrics_for_bar(bars, index: int):
+    if not bars or index < 0 or index >= len(bars): return {}
+    b = bars[index]
+    low = min(x['low'] for x in bars[:index+1])
+    # ATR fallback for Phase 1 preview until daily API is added: user-visible validity flag marks unavailable.
+    return {'selected_price': b['close'], 'low_of_day_so_far': low, 'lod_distance_pct': None, 'lod_distance_valid': False, 'lod_distance_message': 'ATR(14) aus Daily-Daten noch nicht geladen; keine Schätzung.'}
