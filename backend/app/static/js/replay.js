@@ -42,6 +42,7 @@ SM._replayRedraw = function () {
   cs.candleSeries.setData(SM.barsToSeriesData(visible));
   cs.volumeSeries.setData(SM.volumeToSeriesData(visible));
   SM.renderExtendedHoursShading(visible);
+  SM.updateChartLegend(null);
   const cutoffUnix = visible.length ? SM.toUnixTime(visible[visible.length - 1].time) : -Infinity;
   for (const key of Object.keys(cs.lineSeries)) {
     const pts = (cs.indicators[key] || []).filter((p) => SM.toUnixTime(p.time) <= cutoffUnix);
@@ -88,10 +89,21 @@ SM.replayTick = function () {
     if (pt) cs.lineSeries[key].update({ time: SM.toUnixTime(pt.time), value: pt.value });
   }
   SM.replay.positionTime = bar.time;
+  SM.updateChartLegend(null);
   SM.updateReplayPosLabel();
 };
 
 SM.replayStep = function () { if (!SM.replay.playing) SM.replayTick(); };
+
+SM.replayJumpTo = function (index) {
+  const bars = SM.chartState.bars;
+  if (!bars.length) return;
+  if (SM.replay.playing) SM.replayPause();
+  SM.replay.revealIndex = Math.max(0, Math.min(index, bars.length - 1));
+  SM.replay.positionTime = bars[SM.replay.revealIndex].time;
+  SM._replayRedraw();
+  SM.updateReplayPosLabel();
+};
 
 SM.replayStepBack = function () {
   if (SM.replay.playing) SM.replayPause();
@@ -127,6 +139,21 @@ SM.updateReplayPosLabel = function () {
   SM.scheduleMetricsRefresh();
   const el = document.getElementById('replayPos');
   if (el) el.textContent = SM.replay.positionTime ? `Position: ${SM.replay.positionTime}` : '';
+  SM.syncReplayScrub();
+};
+
+// Scrubber (Range-Slider) + Zaehler mit der aktuellen Replay-Position
+// synchron halten - erlaubt sofortiges Springen statt Kerze-fuer-Kerze
+// klicken (schnelleres Durcharbeiten von Replays).
+SM.syncReplayScrub = function () {
+  const scrub = document.getElementById('replayScrub');
+  const count = document.getElementById('replayCount');
+  const bars = SM.chartState.bars;
+  if (!scrub) return;
+  const max = Math.max(0, bars.length - 1);
+  scrub.max = String(max);
+  scrub.value = String(Math.max(0, SM.replay.revealIndex));
+  if (count) count.textContent = (bars.length && SM.replay.revealIndex >= 0) ? `Kerze ${SM.replay.revealIndex + 1} / ${bars.length}` : '';
 };
 
 // Beim Zeitebenen-Wechsel waehrend eines aktiven Replays: Aufdeckgrenze anhand
@@ -144,4 +171,5 @@ SM.replayOnTimeframeSwitch = function (newBars, newIndicators, newTimeframe) {
   }
   SM.replay.revealIndex = idx;
   SM._replayRedraw();
+  SM.updateReplayPosLabel();
 };

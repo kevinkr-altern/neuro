@@ -82,30 +82,92 @@ SM.saveLabel = async function () {
   } catch (e) { SM.showErr(e.message); }
 };
 
+// ---------- Kennzahlen als gruppierte, farblich codierte Karten (statt einer
+// langen flachen Tabelle) - plus dieselben Werte kompakt direkt am Chart
+// (SM.updateQuickStats), damit man nicht in den Tab wechseln muss. ----------
+
+SM._mrow = function (label, valueText, cls) {
+  return `<div class="metric-row"><span class="k">${label}</span><span class="v${cls ? ' ' + cls : ''}">${valueText}</span></div>`;
+};
+SM._signCls = function (v) { return v == null ? 'dim' : (v >= 0 ? 'good' : 'bad'); };
+SM._fmt = function (v, suffix) { return v == null ? '—' : (v + (suffix || '')); };
+SM._fmtPrice = function (v) { return v == null ? '—' : v.toFixed(2); };
+
 SM.fillMetricsTable = function () {
   const m = SM.metrics || {};
-  const rows = [
-    ['Preis (Cutoff)', m.selected_price], ['Low of Day bisher', m.low_of_day_so_far], ['Session-Open', m.session_open],
-    ['ATR(14) $', m.atr14_dollars], ['LoD-Distance %', m.lod_distance_pct],
-    ['LoD ≤70%-Regel', m.lod_rule_70_ok == null ? null : (m.lod_rule_70_ok ? 'erfuellt' : 'verletzt')],
-    ['ATR-Ext SMA50', m.atr_ext_sma50], ['ATR-Ext EMA10', m.atr_ext_ema10], ['ATR-Ext EMA21', m.atr_ext_ema21],
-    ['ADR% 14T', m.adr14_pct], ['ADR% 20T', m.adr20_pct], ['Vol-Compression-Proxy 15T', m.volatility_compression_proxy_15],
-    ['RVOL', m.rvol_projected != null ? m.rvol_projected + ' (' + (m.rvol_note || '') + ')' : null],
-    ['Abstand EMA10 %', m.dist_ema10_pct], ['Abstand EMA20 %', m.dist_ema20_pct], ['Abstand SMA50 %', m.dist_sma50_pct],
-    ['Abstand SMA100 %', m.dist_sma100_pct], ['Abstand SMA200 %', m.dist_sma200_pct],
-    ['Gap %', m.gap_pct], ['PDH', m.pdh], ['PDL', m.pdl],
-    ['ORB m5 H/L', m.orb_m5_valid ? m.orb_m5_high + ' / ' + m.orb_m5_low : 'noch nicht gueltig'],
-    ['ORB m15 H/L', m.orb_m15_valid ? m.orb_m15_high + ' / ' + m.orb_m15_low : 'noch nicht gueltig'],
-    ['ORB m30 H/L', m.orb_m30_valid ? m.orb_m30_high + ' / ' + m.orb_m30_low : 'noch nicht gueltig'],
-    ['Datenstatus', m.data_status],
+  const target = SM.$('metrics');
+  if (!m || Object.keys(m).length === 0) {
+    target.innerHTML = '<p class="metrics-empty">Noch keine Kennzahlen geladen — im Replay eine Kerze anklicken oder "Setup hier markieren" verwenden.</p>';
+    SM.updateQuickStats();
+    return;
+  }
+  const orbRow = (tf) => m[`orb_${tf}_valid`] ? `${SM._fmtPrice(m[`orb_${tf}_high`])} / ${SM._fmtPrice(m[`orb_${tf}_low`])}` : 'noch nicht gueltig';
+  const cards = [
+    `<div class="metric-card"><h4>Preis</h4>
+      ${SM._mrow('Preis (Cutoff)', SM._fmtPrice(m.selected_price))}
+      ${SM._mrow('Session-Open', SM._fmtPrice(m.session_open))}
+      ${SM._mrow('Gap %', SM._fmt(m.gap_pct, '%'), SM._signCls(m.gap_pct))}
+      ${SM._mrow('PDH', SM._fmtPrice(m.pdh))}
+      ${SM._mrow('PDL', SM._fmtPrice(m.pdl))}
+      ${SM._mrow('Low of Day bisher', SM._fmtPrice(m.low_of_day_so_far))}
+    </div>`,
+    `<div class="metric-card"><h4>Volatilitaet</h4>
+      ${SM._mrow('ATR(14) $', SM._fmtPrice(m.atr14_dollars))}
+      ${SM._mrow('LoD-Distance %', SM._fmt(m.lod_distance_pct, '%'), m.lod_rule_70_ok == null ? 'dim' : (m.lod_rule_70_ok ? 'good' : 'bad'))}
+      ${SM._mrow('LoD ≤70%-Regel', m.lod_rule_70_ok == null ? '—' : (m.lod_rule_70_ok ? 'erfuellt' : 'verletzt'), m.lod_rule_70_ok == null ? 'dim' : (m.lod_rule_70_ok ? 'good' : 'bad'))}
+      ${SM._mrow('ATR-Ext SMA50', SM._fmt(m.atr_ext_sma50))}
+      ${SM._mrow('ATR-Ext EMA10', SM._fmt(m.atr_ext_ema10))}
+      ${SM._mrow('ATR-Ext EMA21', SM._fmt(m.atr_ext_ema21))}
+      ${SM._mrow('ADR% 14T', SM._fmt(m.adr14_pct, '%'))}
+      ${SM._mrow('ADR% 20T', SM._fmt(m.adr20_pct, '%'))}
+      ${SM._mrow('Vol-Compression-Proxy 15T', SM._fmt(m.volatility_compression_proxy_15))}
+    </div>`,
+    `<div class="metric-card"><h4>Volumen</h4>
+      ${SM._mrow('RVOL', m.rvol_projected != null ? m.rvol_projected : '—')}
+      ${SM._mrow('Methode', m.rvol_note || '—', 'dim')}
+    </div>`,
+    `<div class="metric-card"><h4>Abstand zu Moving Averages</h4>
+      ${SM._mrow('EMA10 %', SM._fmt(m.dist_ema10_pct, '%'), SM._signCls(m.dist_ema10_pct))}
+      ${SM._mrow('EMA20 %', SM._fmt(m.dist_ema20_pct, '%'), SM._signCls(m.dist_ema20_pct))}
+      ${SM._mrow('SMA50 %', SM._fmt(m.dist_sma50_pct, '%'), SM._signCls(m.dist_sma50_pct))}
+      ${SM._mrow('SMA100 %', SM._fmt(m.dist_sma100_pct, '%'), SM._signCls(m.dist_sma100_pct))}
+      ${SM._mrow('SMA200 %', SM._fmt(m.dist_sma200_pct, '%'), SM._signCls(m.dist_sma200_pct))}
+    </div>`,
+    `<div class="metric-card"><h4>Opening Range</h4>
+      ${SM._mrow('ORB M5 H/L', orbRow('m5'), m.orb_m5_valid ? '' : 'dim')}
+      ${SM._mrow('ORB M15 H/L', orbRow('m15'), m.orb_m15_valid ? '' : 'dim')}
+      ${SM._mrow('ORB M30 H/L', orbRow('m30'), m.orb_m30_valid ? '' : 'dim')}
+    </div>`,
+    `<div class="metric-card"><h4>Status</h4>
+      ${SM._mrow('Datenstatus', m.data_status || '—', (m.flags && m.flags.length) ? 'bad' : 'good')}
+    </div>`,
   ];
-  SM.$('metrics').innerHTML = rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1] == null ? '—' : r[1]}</td></tr>`).join('');
+  target.innerHTML = cards.join('');
   SM.setReferenceLines([
     { price: m.pdh, color: '#8a8a2e', title: 'PDH' },
     { price: m.pdl, color: '#8a8a2e', title: 'PDL' },
     { price: m.orb_m30_valid ? m.orb_m30_high : null, color: '#4dabf7', title: 'ORH m30' },
     { price: m.orb_m30_valid ? m.orb_m30_low : null, color: '#4dabf7', title: 'ORL m30' },
   ]);
+  SM.updateQuickStats();
+};
+
+// Kompakter Auszug der wichtigsten Kennzahlen direkt am Chart, damit man
+// nicht in den Kennzahlen-Tab wechseln muss - dieselbe SM.metrics-Quelle,
+// nur eine zweite, knappere Darstellung.
+SM.updateQuickStats = function () {
+  const el = SM.$('quickStats');
+  if (!el) return;
+  const m = SM.metrics || {};
+  if (m.selected_price == null) { el.innerHTML = ''; return; }
+  const chip = (label, value, cls) => `<span class="qs-chip${cls ? ' ' + cls : ''}">${label}<b>${value}</b></span>`;
+  const chips = [chip('Preis', SM._fmtPrice(m.selected_price))];
+  if (m.gap_pct != null) chips.push(chip('Gap', m.gap_pct + '%', m.gap_pct >= 0 ? 'good' : 'bad'));
+  if (m.lod_distance_pct != null) chips.push(chip('LoD-Dist', m.lod_distance_pct + '%', m.lod_rule_70_ok ? 'good' : 'bad'));
+  if (m.atr_ext_ema10 != null) chips.push(chip('ATR-Ext EMA10', m.atr_ext_ema10));
+  if (m.rvol_projected != null) chips.push(chip('RVOL', m.rvol_projected, m.rvol_projected >= 1 ? 'good' : 'warn2'));
+  if (m.orb_m5_valid) chips.push(chip('ORB M5', SM._fmtPrice(m.orb_m5_high) + '/' + SM._fmtPrice(m.orb_m5_low)));
+  el.innerHTML = chips.join('');
 };
 
 SM.loadLabels = async function () {
