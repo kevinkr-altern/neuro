@@ -25,6 +25,23 @@ SM._posXY = function (evt) {
   return { x: evt.clientX - r.left, y: evt.clientY - r.top };
 };
 
+// Der Standard-Kasten soll direkt gross/deutlich sichtbar sein (wie bei
+// TradingViews Long-Position-Werkzeug), nicht als winziger 5-Minuten-Streifen.
+// Ueber einen Kerzen-Index-Vorsprung (nicht ueber den aktuell sichtbaren
+// Zeitbereich) berechnet, damit der Standardwert unabhaengig vom Zoom/von
+// einer gleichzeitigen Replay-Neuskalierung durch denselben Klick stabil
+// bleibt. Ziehen am Exit-Griff funktioniert danach weiterhin normal.
+SM.POSITION_DEFAULT_BARS_AHEAD = 40;
+
+SM._defaultExitTimeUnix = function (entryTimeUnix) {
+  const bars = SM.chartState.bars;
+  if (!bars.length) return entryTimeUnix + 60 * (SM.TF_SECONDS[SM.chartState.timeframe] || 300);
+  const entryIdx = bars.findIndex((b) => SM.toUnixTime(b.time) === entryTimeUnix);
+  const baseIdx = entryIdx >= 0 ? entryIdx : bars.length - 1;
+  const exitIdx = Math.min(baseIdx + SM.POSITION_DEFAULT_BARS_AHEAD, bars.length - 1);
+  return exitIdx > baseIdx ? SM.toUnixTime(bars[exitIdx].time) : entryTimeUnix + 60 * (SM.TF_SECONDS[SM.chartState.timeframe] || 300);
+};
+
 SM._snapToBar = function (timeUnix) {
   const bars = SM.chartState.bars;
   if (!bars.length) return timeUnix;
@@ -38,8 +55,8 @@ SM._snapToBar = function (timeUnix) {
 
 SM._createPositionRects = function () {
   const cs = SM.chartState;
-  const rectTarget = new SM.RectPrimitive({ fillColor: 'rgba(85,217,141,0.18)', borderColor: '#55d98d', borderWidth: 1 });
-  const rectStop = new SM.RectPrimitive({ fillColor: 'rgba(255,107,107,0.18)', borderColor: '#ff6b6b', borderWidth: 1 });
+  const rectTarget = new SM.RectPrimitive({ fillColor: 'rgba(38,166,91,0.38)', borderColor: '#26a65b', borderWidth: 1 });
+  const rectStop = new SM.RectPrimitive({ fillColor: 'rgba(184,38,38,0.38)', borderColor: '#c23a3a', borderWidth: 1 });
   cs.candleSeries.attachPrimitive(rectTarget);
   cs.candleSeries.attachPrimitive(rectStop);
   return { rectTarget, rectStop };
@@ -243,7 +260,7 @@ SM.initPositionTool = function () {
       SM.position = {
         entryTimeUnix, entryPrice: price,
         stopPrice: price - seedRisk, targetPrice: price + seedRisk * SM.DEFAULT_RR,
-        exitTimeUnix: entryTimeUnix + 5 * 60, qty: SM.DEFAULT_QTY,
+        exitTimeUnix: SM._defaultExitTimeUnix(entryTimeUnix), qty: SM.DEFAULT_QTY,
         dragging: 'stop',
       };
       const rects = SM._createPositionRects();

@@ -104,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   chart.subscribeClick((param) => {
     if (SM.drawingArmed) return; // wird ueber rohes mousedown behandelt (siehe drawings.js)
+    if (SM.positionArmed || SM.position) return; // Positions-Werkzeug hat Vorrang am selben Klick (sonst wuerde derselbe Klick zusaetzlich einen Replay-Startpunkt setzen und den gerade platzierten Kasten verwaisen lassen)
     if (!param.time) return;
     const bars = SM.chartState.bars;
     const idx = bars.findIndex((b) => SM.toUnixTime(b.time) === param.time);
@@ -159,9 +160,14 @@ document.addEventListener('DOMContentLoaded', () => {
   SM.$('btnBackup').addEventListener('click', SM.backup);
   SM.$('btnListBackups').addEventListener('click', SM.listBackups);
 
+  SM.$('btnWlAdd').addEventListener('click', SM.addWatchlistItem);
+  SM.$('wlTicker').addEventListener('keydown', (e) => { if (e.key === 'Enter') SM.$('btnWlAdd').click(); });
+  SM.$('wlCategory').addEventListener('keydown', (e) => { if (e.key === 'Enter') SM.$('btnWlAdd').click(); });
+
   SM.buildLabelForm();
   SM.fillMetricsTable();
   SM.loadLabels();
+  SM.loadWatchlist();
   SM.loadTicker('1d');
   SM.checkM5Earliest(SM.$('ticker').value.trim().toUpperCase());
 });

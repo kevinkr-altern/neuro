@@ -246,6 +246,39 @@ def get_markers(setup_id: int):
     with conn() as c:
         return [dict(r) for r in c.execute("select * from setup_markers where setup_id=? order by timestamp", (setup_id,))]
 
+# ---------- Watchlist (Ticker unter frei benannten Ueberschriften wie "Prime"/"Tier2") ----------
+
+class WatchlistItemIn(BaseModel):
+    ticker: str
+    category: str = 'Watchlist'
+
+@router.get('/watchlist')
+def list_watchlist():
+    with conn() as c:
+        return [dict(r) for r in c.execute("select * from watchlist_items order by category collate nocase, ticker collate nocase")]
+
+@router.post('/watchlist')
+def add_watchlist_item(item: WatchlistItemIn):
+    ticker = item.ticker.strip().upper()
+    category = item.category.strip() or 'Watchlist'
+    if not ticker:
+        raise HTTPException(400, 'Ticker darf nicht leer sein.')
+    with conn() as c:
+        cur = c.execute("insert or ignore into watchlist_items(ticker,category) values(?,?)", (ticker, category))
+        if cur.rowcount == 0:
+            row = c.execute("select id from watchlist_items where ticker=? and category=?", (ticker, category)).fetchone()
+            return {'id': row['id'], 'ticker': ticker, 'category': category, 'already_existed': True}
+        return {'id': cur.lastrowid, 'ticker': ticker, 'category': category, 'already_existed': False}
+
+@router.delete('/watchlist/{item_id}')
+def delete_watchlist_item(item_id: int):
+    with conn() as c:
+        row = c.execute("select id from watchlist_items where id=?", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, f'Watchlist-Eintrag {item_id} nicht gefunden.')
+        c.execute("delete from watchlist_items where id=?", (item_id,))
+    return {'deleted': item_id}
+
 # ---------- CSV-Import ----------
 
 REQUIRED = ['ticker', 'entry_date', 'label_class', 'structure', 'trigger', 'tactic']

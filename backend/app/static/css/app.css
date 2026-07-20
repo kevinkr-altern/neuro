@@ -56,10 +56,10 @@ main.layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px 1
 .qs-chip.warn2 b{color:#ffd166}
 
 .pos-overlay-label{position:absolute;transform:translate(4px,-50%);background:rgba(10,16,26,0.92);border:1px solid var(--border);
-  border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;pointer-events:none;z-index:5;display:none}
-.pos-overlay-label.pos-target{border-color:var(--up);color:#8ef0e0}
-.pos-overlay-label.pos-stop{border-color:var(--down);color:#ff8b8b}
-.pos-overlay-label.pos-tooltip{transform:translate(6px,-120%);border-color:#4dabf7;color:#a9d3ff}
+  border-radius:4px;padding:4px 9px;font-size:12px;font-weight:700;white-space:nowrap;pointer-events:none;z-index:5;display:none}
+.pos-overlay-label.pos-target{background:#1f7a4d;color:#eafff2;border-color:#1f7a4d}
+.pos-overlay-label.pos-stop{background:#9c2b2b;color:#ffeeee;border-color:#9c2b2b}
+.pos-overlay-label.pos-tooltip{transform:translate(6px,-120%);background:rgba(10,16,26,0.92);border-color:#4dabf7;color:#a9d3ff;font-weight:500}
 .pos-overlay-label.pos-orb-results{transform:translate(0,-100%);border-color:#ffd166;color:#ffe4a3;line-height:1.5;text-align:left}
 
 .topbar-right{position:relative}
@@ -125,6 +125,14 @@ main.layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px 1
 .metric-row .v.bad{color:var(--down)}
 .metric-row .v.dim{color:var(--muted-2);font-weight:400}
 .metrics-empty{color:var(--muted-2);font-size:12.5px;padding:8px 2px}
+
+.watchlist-add{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.watchlist-add input{flex:1;min-width:80px}
+.wl-ticker-list{display:flex;flex-direction:column;gap:2px}
+.wl-item{display:flex;align-items:center;justify-content:space-between;padding:4px 2px;border-top:1px solid var(--border-soft)}
+.wl-item:first-child{border-top:none}
+.wl-ticker{cursor:pointer;font-weight:600;color:var(--accent-hi)}
+.wl-ticker:hover{text-decoration:underline}
 
 table{width:100%;border-collapse:collapse}
 td{border-top:1px solid var(--border);padding:6px 8px;font-size:13px}
