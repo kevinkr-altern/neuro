@@ -11,10 +11,20 @@ split-bereinigte Preisbasis.
 - Rohdaten bleiben unverändert in der Datenbank gespeichert (keine künstlichen
   Daten, keine Mutation der Historie).
 - Die Umrechnung passiert ausschließlich beim **Lesen**: ein Kurs mit Datum T
-  wird durch das Produkt aller Split-Verhältnisse **nach** T geteilt, Volumen
-  mit demselben Faktor multipliziert (`backend/app/services/split_adjust.py`).
-  Das ist die Standard-Rückrechnung, wie sie jeder Broker/TradingView bei
-  "adjusted" anzeigt.
+  wird durch das Produkt aller Split-Verhältnisse **nach** T geteilt
+  (`backend/app/services/split_adjust.py`). Das ist die Standard-Rückrechnung,
+  wie sie jeder Broker/TradingView bei "adjusted" anzeigt.
+- **Volumen wird NICHT einheitlich behandelt** — live gegen EODHD geprüft:
+  der `/eod`-Endpunkt (daily UND weekly) liefert ein Volumen, das EODHD selbst
+  bereits auf die aktuelle Aktienzahl umgerechnet hat (erkennbar daran, dass
+  `adjusted_close × rohes Volumen` ein plausibles Dollar-Volumen ergibt, `close
+  × rohes Volumen` dagegen nicht), während der `/intraday`-Endpunkt rohes,
+  unadjustiertes Volumen liefert. Deshalb: `adjust_bars(..., adjust_volume=False)`
+  für daily/weekly (`daily_bars_range`, `weekly_bars_range`, `_daily_before`),
+  `adjust_volume=True` (Standard) für intraday (`_regular_intraday`,
+  `_regular_intraday_range`, all-sessions). Eine frühere Version multiplizierte
+  das Tages-/Wochenvolumen fälschlich nochmal, was für alte Tage vor einem
+  Split absurd hohe Werte erzeugte (z.B. "13B+ Aktien" statt realer ~20-40M).
 - Split-Historie kommt von EODHDs Splits-API und wird wie Kursdaten
   zwischengespeichert (`splits_history`-Tabelle, Wasserstandsmarken-Muster).
 - Ein einziger Umrechnungspunkt pro Datenquelle (`_daily_before`,

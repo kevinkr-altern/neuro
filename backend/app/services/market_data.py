@@ -343,7 +343,11 @@ def daily_bars_range(ticker: str, date_from: str, date_to: str):
             "select date as time, open, high, low, close, volume from price_bars_daily "
             "where symbol_id=? and date between ? and ? order by date", (sid, date_from, date_to))]
     rows = _drop_broken_ohlc(rows)
-    return adjust_bars(rows, _load_splits(sid))
+    # adjust_volume=False: EODHDs /eod-Volumen ist bereits auf die aktuelle
+    # Aktienzahl umgerechnet (live geprueft, siehe split_adjust.adjust_bar) -
+    # nochmal mit dem Split-Faktor multiplizieren wuerde das Volumen fuer
+    # Tage vor einem Split massiv verfaelschen (Doppel-Anpassung).
+    return adjust_bars(rows, _load_splits(sid), adjust_volume=False)
 
 def weekly_bars_range(ticker: str, date_from: str, date_to: str):
     sid = symbol_id(ticker)
@@ -352,7 +356,7 @@ def weekly_bars_range(ticker: str, date_from: str, date_to: str):
             "select date as time, open, high, low, close, volume from price_bars_weekly "
             "where symbol_id=? and date between ? and ? order by date", (sid, date_from, date_to))]
     rows = _drop_broken_ohlc(rows)
-    return adjust_bars(rows, _load_splits(sid))
+    return adjust_bars(rows, _load_splits(sid), adjust_volume=False)  # siehe daily_bars_range
 
 def indicator_series(bars: list[dict]) -> dict:
     """EMA10/EMA20/SMA50/SMA200 fuer die uebergebenen Kerzen (zeitebenen-nativ:
@@ -381,7 +385,7 @@ def _daily_before(sid: int, date: str):
             "select date, open, high, low, close, volume from price_bars_daily where symbol_id=? and date<? order by date",
             (sid, date))]
     rows = _drop_broken_ohlc(rows)
-    return adjust_bars(rows, _load_splits(sid))
+    return adjust_bars(rows, _load_splits(sid), adjust_volume=False)  # siehe daily_bars_range
 
 def compute_metrics(ticker: str, date: str, cutoff_et: str | None = None):
     """Kennzahlen-Panel, look-ahead-sicher: Intraday bis Cutoff, Daily bis Vortag."""

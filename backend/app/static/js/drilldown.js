@@ -19,7 +19,7 @@ SM.drilldownDay = async function (ticker, dateIso) {
     SM.chartState.indicators = r.indicators;
     SM.replay.revealIndex = r.bars.length - 1;
     SM.replay.positionTime = r.bars.length ? r.bars[r.bars.length - 1].time : null;
-    SM._replayRedraw();
+    SM._replayRedraw({ resetZoom: true });
     SM.updateReplayPosLabel();
     SM.renderOrbBands();
     SM.refreshMarketStateStrip();
@@ -45,7 +45,7 @@ SM.returnToDaily = async function () {
     if (idx < 0) idx = r.bars.length - 1;
     SM.replay.revealIndex = idx;
     SM.replay.positionTime = r.bars[idx] ? r.bars[idx].time : null;
-    SM._replayRedraw();
+    SM._replayRedraw({ resetZoom: true });
     SM.updateReplayPosLabel();
     SM.refreshMarketStateStrip();
     SM.setMsg(`Zurueck zum Tages-Chart (${r.bars.length} Kerzen).`);

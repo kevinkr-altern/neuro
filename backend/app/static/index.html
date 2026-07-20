@@ -14,6 +14,13 @@
       <button data-tf="1d" class="active">D1</button>
       <button data-tf="1w">W1</button>
     </div>
+    <div class="tf-group" id="rangeGroup" title="Zeitraum (nur fuer D1/W1)">
+      <button data-range="ytd">Lfd. Jahr</button>
+      <button data-range="1y">1J</button>
+      <button data-range="3y" class="active">3J</button>
+      <button data-range="5y">5J</button>
+      <button data-range="max">Max</button>
+    </div>
     <span id="m5Badge" class="badge">M5 ab: —</span>
   </div>
   <div class="topbar-right">
@@ -58,6 +65,7 @@
           <button data-marker="pivot" title="Taste P">P</button>
         </span>
         <button id="btnPositionTool" title="Position platzieren: klicken und im Chart ziehen">Position-Tool</button>
+        <button id="btnClosePosition" class="btn-secondary" title="Position manuell am aktuellen Exit-Punkt schliessen">Trade schliessen</button>
         <button id="btnClearPosition" class="btn-secondary" title="Positions-Werkzeug entfernen">✕ Position</button>
         <button id="btnMarkSetup">Setup hier markieren</button>
         <button id="btnBackToDaily" class="hidden btn-secondary" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
@@ -65,12 +73,17 @@
         <span class="kbd-hint">Navigation: <kbd>←</kbd> <kbd>→</kbd> Schritt, <kbd>Leertaste</kbd> Play/Pause, Scrubber = schnell springen</span>
       </div>
     </div>
-    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20). "／ Linie" zeichnet eine freie Trendlinie (Start-/Endpunkt anklicken, ESC bricht ab). "▤ Minuten-Chart" oeffnet bei pausiertem D1-Replay einen zweiten, einklappbaren Chart mit den 5-Minuten-Kerzen dieses Tages (feinste verfuegbare Aufloesung - EODHD liefert kein echtes 1-Minuten-Intervall); ist der Tag dort durchgelaufen, springt der grosse Tages-Chart automatisch einen Tag weiter und der Minuten-Chart startet neu.</p>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken setzt Entry/Stop/Ziel (blaue Linie = Entry); Griffe am rechten Rand ziehen, um Stop/Ziel anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Der Trade schliesst automatisch, sobald eine aufgedeckte Kerze den Stop oder das Ziel beruehrt (oder manuell ueber "Trade schliessen"); danach Kennzahlen im Label-Tab pruefen und speichern - anschliessend kann direkt eine neue Position gesetzt werden. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20). "／ Linie" zeichnet eine freie Trendlinie (Start-/Endpunkt anklicken, ESC bricht ab). "▤ Minuten-Chart" oeffnet bei pausiertem D1-Replay einen zweiten, einklappbaren Chart mit den 5-Minuten-Kerzen dieses Tages (feinste verfuegbare Aufloesung - EODHD liefert kein echtes 1-Minuten-Intervall); ist der Tag dort durchgelaufen, springt der grosse Tages-Chart automatisch einen Tag weiter und der Minuten-Chart startet neu.</p>
 
     <div id="miniChartPanel" class="mini-chart-panel hidden">
       <div class="mini-chart-header">
-        <span>Minuten-Chart (5m): <b id="miniChartDate">–</b></span>
+        <span>Minuten-Chart: <b id="miniChartDate">–</b></span>
         <div class="mini-controls">
+          <div class="tf-group" id="miniTfGroup">
+            <button data-mini-tf="5m" class="active">M5</button>
+            <button data-mini-tf="15m">M15</button>
+            <button data-mini-tf="30m">M30</button>
+          </div>
           <button id="miniStepBack" class="icon-btn" title="Schritt zurueck">⏮</button>
           <button id="miniPlay" class="icon-btn primary" title="Play/Pause">▶</button>
           <button id="miniStep" class="icon-btn" title="Schritt vorwaerts">⏭</button>

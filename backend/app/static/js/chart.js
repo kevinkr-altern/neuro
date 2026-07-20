@@ -7,7 +7,19 @@ SM.TF_SECONDS = { '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '1d': 86400, '
 SM.chartState = {
   chart: null, candleSeries: null, volumeSeries: null,
   lineSeries: {}, markersApi: null,
-  bars: [], indicators: {}, timeframe: '1d',
+  bars: [], indicators: {}, timeframe: '1d', rangeKey: '3y',
+};
+
+// Zeitraum-Auswahl (nur fuer D1/W1) - Standard 3 Jahre statt der gesamten
+// Historie seit 1985, damit der Chart nicht standardmaessig Jahrzehnte auf
+// einmal zeigt.
+SM.computeRangeDateFrom = function (rangeKey) {
+  if (rangeKey === 'max') return undefined;
+  const today = new Date();
+  if (rangeKey === 'ytd') return `${today.getUTCFullYear()}-01-01`;
+  const years = { '1y': 1, '3y': 3, '5y': 5 }[rangeKey] || 3;
+  const d = new Date(Date.UTC(today.getUTCFullYear() - years, today.getUTCMonth(), today.getUTCDate()));
+  return d.toISOString().slice(0, 10);
 };
 
 SM.toUnixTime = function (iso) {
