@@ -27,9 +27,12 @@ SM.loadTicker = async function (timeframe) {
   const ticker = SM.$('ticker').value.trim().toUpperCase();
   if (!ticker) { SM.showErr('Bitte Ticker eingeben.'); return; }
   timeframe = timeframe || SM.chartState.timeframe || '1d';
+  // Zeitraum-Auswahl gilt nur fuer D1/W1 - Intraday-Zeitebenen bleiben beim
+  // bestehenden, m5-verfuegbarkeitsbasierten Standardbereich.
+  const dateFrom = (timeframe === '1d' || timeframe === '1w') ? SM.computeRangeDateFrom(SM.chartState.rangeKey) : undefined;
   SM.showErr(''); SM.setMsg(`Lade ${ticker} (${timeframe}) … das kann bei sehr langer Historie einen Moment dauern.`);
   try {
-    const r = await SM.getChartData(ticker, timeframe);
+    const r = await SM.getChartData(ticker, timeframe, dateFrom);
     SM.chartState.timeframe = timeframe;
     SM.dataCache[ticker] = SM.dataCache[ticker] || {};
     SM.dataCache[ticker][timeframe] = r;
@@ -67,6 +70,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  document.querySelectorAll('#rangeGroup [data-range]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#rangeGroup [data-range]').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      SM.chartState.rangeKey = btn.dataset.range;
+      SM.loadTicker(SM.chartState.timeframe);
+    });
+  });
+
   SM.$('btnReplayToggle').addEventListener('click', () => {
     if (SM.replay.active) {
       SM.replayDisarm();
@@ -95,6 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   SM.initPositionTool();
   SM.$('btnPositionTool').addEventListener('click', SM.armPositionTool);
+  SM.$('btnClosePosition').addEventListener('click', SM.closePositionManually);
   SM.$('btnClearPosition').addEventListener('click', SM.clearPosition);
   SM.initMiniChart();
 

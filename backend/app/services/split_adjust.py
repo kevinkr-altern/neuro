@@ -40,24 +40,37 @@ def cumulative_factor_after(bar_date: str, splits: list[dict]) -> float:
     return factor
 
 
-def adjust_bar(bar: dict, factor: float) -> dict:
-    """Nicht-mutierend. OHLC / factor; Volumen * factor. factor==1.0 -> unveraendert (schneller Pfad)."""
+def adjust_bar(bar: dict, factor: float, adjust_volume: bool = True) -> dict:
+    """Nicht-mutierend. OHLC / factor. Volumen * factor NUR wenn adjust_volume=True.
+    factor==1.0 -> unveraendert (schneller Pfad).
+
+    adjust_volume muss je nach Datenquelle unterschiedlich sein - live gegen
+    EODHD geprueft (nicht geraten): der /intraday-Endpunkt liefert RAWES
+    Volumen (zusammen mit unadjustierten OHLC), waehrend der /eod-Endpunkt
+    (daily UND weekly) ein Volumen liefert, das EODHD selbst bereits auf die
+    aktuelle (nach allen Splits) Aktienzahl umgerechnet hat - erkennbar daran,
+    dass adjusted_close * rohes Volumen ein plausibles Dollar-Volumen ergibt,
+    raw close * rohes Volumen dagegen um denselben Faktor zu hoch waere.
+    Multipliziert man dieses bereits umgerechnete Tages-/Wochenvolumen hier
+    NOCHMAL mit dem Split-Faktor, entsteht eine Doppel-Anpassung (beobachtet:
+    NVDA-Tage vor 2021 zeigten "13B+ Aktien" Volumen statt der realen ~20-40M).
+    Deshalb: adjust_volume=False fuer daily/weekly, True fuer intraday."""
     if factor == 1.0:
         return bar
     out = dict(bar)
     for k in ('open', 'high', 'low', 'close'):
         if out.get(k) is not None:
             out[k] = out[k] / factor
-    if out.get('volume') is not None:
+    if adjust_volume and out.get('volume') is not None:
         out['volume'] = out['volume'] * factor
     return out
 
 
-def adjust_bars(bars: list[dict], splits: list[dict]) -> list[dict]:
+def adjust_bars(bars: list[dict], splits: list[dict], adjust_volume: bool = True) -> list[dict]:
     """Wendet cumulative_factor_after() gleichmaessig auf jede Zeile an. Reine
     Wertumrechnung - die Menge/Reihenfolge der Zeilen bleibt unveraendert, damit
     der Look-ahead-Schutz (welche Zeilen ueberhaupt zurueckgegeben werden)
     unberuehrt bleibt."""
     if not splits:
         return bars
-    return [adjust_bar(b, cumulative_factor_after(_bar_date(b), splits)) for b in bars]
+    return [adjust_bar(b, cumulative_factor_after(_bar_date(b), splits), adjust_volume) for b in bars]

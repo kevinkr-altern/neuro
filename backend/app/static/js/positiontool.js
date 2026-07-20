@@ -26,20 +26,53 @@ SM._posXY = function (evt) {
 };
 
 // Der Standard-Kasten soll direkt gross/deutlich sichtbar sein (wie bei
-// TradingViews Long-Position-Werkzeug), nicht als winziger 5-Minuten-Streifen.
-// Ueber einen Kerzen-Index-Vorsprung (nicht ueber den aktuell sichtbaren
-// Zeitbereich) berechnet, damit der Standardwert unabhaengig vom Zoom/von
-// einer gleichzeitigen Replay-Neuskalierung durch denselben Klick stabil
-// bleibt. Ziehen am Exit-Griff funktioniert danach weiterhin normal.
-SM.POSITION_DEFAULT_BARS_AHEAD = 40;
+// TradingViews Long-Position-Werkzeug). WICHTIG (per Test gefunden): ein
+// fester Kerzen-Index-Vorsprung ist blind gegenueber dem aktuellen Zoom - auf
+// einem weit herausgezoomten Chart (z.B. nach fitContent() ueber tausende
+// Kerzen) wurde der Kasten dadurch nur wenige Pixel breit/hoch und war de
+// facto unsichtbar. Deshalb: Breite und Hoehe als Anteil des AKTUELL
+// SICHTBAREN Bereichs (Kerzen-Index-Fenster bzw. Preisspanne der sichtbaren
+// Kerzen) berechnen, damit der Kasten immer ein sichtbarer, sinnvoller
+// Ausschnitt ist, unabhaengig vom Zoom-Level.
+SM.POSITION_DEFAULT_WIDTH_FRACTION = 0.18; // Anteil der sichtbaren Kerzen
+SM.POSITION_DEFAULT_MIN_BARS_AHEAD = 8;
+
+SM._visibleBarsWindow = function () {
+  const bars = SM.chartState.bars;
+  if (!bars.length) return [];
+  const range = SM.chartState.chart.timeScale().getVisibleLogicalRange();
+  if (!range) return bars;
+  const from = Math.max(0, Math.floor(range.from));
+  const to = Math.min(bars.length - 1, Math.ceil(range.to));
+  return from <= to ? bars.slice(from, to + 1) : bars;
+};
 
 SM._defaultExitTimeUnix = function (entryTimeUnix) {
   const bars = SM.chartState.bars;
-  if (!bars.length) return entryTimeUnix + 60 * (SM.TF_SECONDS[SM.chartState.timeframe] || 300);
+  const fallback = entryTimeUnix + 60 * (SM.TF_SECONDS[SM.chartState.timeframe] || 300);
+  if (!bars.length) return fallback;
   const entryIdx = bars.findIndex((b) => SM.toUnixTime(b.time) === entryTimeUnix);
   const baseIdx = entryIdx >= 0 ? entryIdx : bars.length - 1;
-  const exitIdx = Math.min(baseIdx + SM.POSITION_DEFAULT_BARS_AHEAD, bars.length - 1);
-  return exitIdx > baseIdx ? SM.toUnixTime(bars[exitIdx].time) : entryTimeUnix + 60 * (SM.TF_SECONDS[SM.chartState.timeframe] || 300);
+  const range = SM.chartState.chart.timeScale().getVisibleLogicalRange();
+  const visibleBarCount = range ? Math.max(1, range.to - range.from) : SM.POSITION_DEFAULT_MIN_BARS_AHEAD;
+  const barsAhead = Math.max(SM.POSITION_DEFAULT_MIN_BARS_AHEAD, Math.round(visibleBarCount * SM.POSITION_DEFAULT_WIDTH_FRACTION));
+  const exitIdx = Math.min(baseIdx + barsAhead, bars.length - 1);
+  return exitIdx > baseIdx ? SM.toUnixTime(bars[exitIdx].time) : fallback;
+};
+
+// Standard-Risiko (Entry-Stop-Abstand) als Anteil der Preisspanne der
+// AKTUELL SICHTBAREN Kerzen - aus demselben Grund wie oben (ein fester %-Satz
+// vom Einstiegspreis war auf einem weit herausgezoomten Chart mit riesiger
+// Preisskala nur ein paar Pixel hoch).
+SM._defaultSeedRisk = function (price) {
+  const win = SM._visibleBarsWindow();
+  if (win.length) {
+    const lo = Math.min(...win.map((b) => b.low));
+    const hi = Math.max(...win.map((b) => b.high));
+    const span = hi - lo;
+    if (span > 0) return Math.max(span * 0.08, price * 0.001);
+  }
+  return Math.max(price * 0.01, 0.01);
 };
 
 SM._snapToBar = function (timeUnix) {
@@ -67,6 +100,11 @@ SM._updatePositionRects = function () {
   if (!p) return;
   p.rectTarget.setBounds(p.entryTimeUnix, p.exitTimeUnix, p.entryPrice, p.targetPrice);
   p.rectStop.setBounds(p.entryTimeUnix, p.exitTimeUnix, p.stopPrice, p.entryPrice);
+  // Deutlich markierte Entry-Linie - vorher war nur die Grenze zwischen den
+  // beiden Zonen implizit "der Entry", ohne eigene Beschriftung.
+  SM.setReferenceLineGroup('position', [
+    { price: p.entryPrice, color: '#4dabf7', title: p.closedReason ? 'Entry (zu)' : 'Entry' },
+  ]);
   SM._updatePositionOverlay();
   SM._commitPositionToForm();
   SM._updateOrbBreakoutResults();
@@ -79,8 +117,85 @@ SM.clearPosition = function () {
   }
   SM.position = null;
   SM._hidePositionOverlay();
+  SM.setReferenceLineGroup('position', []);
   const el = SM.$('posOrbResults');
   if (el) el.style.display = 'none';
+};
+
+// ---------- Automatisches Schliessen (Stop/Ziel erreicht) + manuelles
+// Schliessen + Speicher-Uebergabe an das bestehende Label-Formular ----------
+// Sobald geschlossen, ist der Kasten eingefroren (keine Griffe mehr aktiv)
+// und ein Klick mit weiterhin aktivem Positions-Werkzeug startet eine neue
+// Position, statt nichts zu tun.
+
+SM._nearestBar = function (timeUnix) {
+  const bars = SM.chartState.bars;
+  if (!bars.length) return null;
+  let best = bars[0], bestDiff = Infinity;
+  for (const b of bars) {
+    const d = Math.abs(SM.toUnixTime(b.time) - timeUnix);
+    if (d < bestDiff) { bestDiff = d; best = b; }
+  }
+  return best;
+};
+
+// Wird bei jedem Fortschritt der (grossen) Replay-Position aufgerufen (siehe
+// replay.js/updateReplayPosLabel). Prueft ALLE bereits aufgedeckten Kerzen ab
+// dem Entry: sobald eine Kerze den Stop oder das Ziel beruehrt, wird GENAU
+// DORT geschlossen ("der Trade soll da enden, wo der Stop ausgeloest wurde") -
+// unabhaengig davon, wohin der Exit-Griff manuell gezogen wurde.
+SM._maybeAutoCloseOnStop = function () {
+  const p = SM.position;
+  if (!p || p.closedReason) return;
+  const bars = SM.chartState.bars;
+  const revealIndex = SM.replay.revealIndex;
+  if (revealIndex == null || revealIndex < 0) return;
+  for (let i = 0; i < bars.length && i <= revealIndex; i++) {
+    const b = bars[i];
+    const t = SM.toUnixTime(b.time);
+    if (t < p.entryTimeUnix) continue;
+    if (b.low <= p.stopPrice) { p.exitTimeUnix = t; p.exitPrice = p.stopPrice; p.closedReason = 'stop'; break; }
+    if (b.high >= p.targetPrice) { p.exitTimeUnix = t; p.exitPrice = p.targetPrice; p.closedReason = 'target'; break; }
+  }
+  if (p.closedReason) {
+    SM._updatePositionRects();
+    SM._finalizeClosedPosition(p.closedReason === 'stop' ? 'Stop ausgeloest' : 'Ziel erreicht');
+  }
+};
+
+SM.closePositionManually = function () {
+  const p = SM.position;
+  if (!p || p.closedReason) return;
+  const exitBar = SM._nearestBar(p.exitTimeUnix);
+  p.exitPrice = exitBar ? exitBar.close : p.entryPrice;
+  p.closedReason = 'manual';
+  SM._updatePositionRects();
+  SM._finalizeClosedPosition('manuell geschlossen');
+};
+
+// Nach dem Schliessen: Kennzahlen fuer den Entry-Tag laden (wie "Setup hier
+// markieren", derselbe look-ahead-sichere Pfad) und in den Label-Tab
+// wechseln, damit "Label speichern" (bestehender Button) sofort funktioniert -
+// die Trades werden also im bestehenden Label-/Setup-Speicher abgelegt statt
+// in einem neuen, separaten "Trades"-Konzept.
+SM._finalizeClosedPosition = async function (reasonText) {
+  const p = SM.position;
+  if (!p) return;
+  SM._maybeComputeExitMetrics();
+  const exitDateIso = new Date(p.exitTimeUnix * 1000).toISOString().slice(0, 10);
+  const entryDateIso = new Date(p.entryTimeUnix * 1000).toISOString().slice(0, 10);
+  const isIntraday = SM.chartState.timeframe !== '1d' && SM.chartState.timeframe !== '1w';
+  const cutoff = isIntraday ? new Date(p.entryTimeUnix * 1000).toISOString().slice(11, 19) : '16:00:00';
+  SM.setMsg(`Position geschlossen (${reasonText}) am ${exitDateIso}. Kennzahlen fuer den Entry-Tag werden geladen - danach im Label-Tab pruefen und "Label speichern" klicken.`, p.closedReason === 'stop' ? 'warn' : 'msg');
+  try {
+    const ticker = SM.$('ticker').value.trim().toUpperCase();
+    const r = await SM.getChartCutoff(ticker, entryDateIso, '5m', cutoff);
+    SM.metrics = r.metrics || {};
+    SM.fillMetricsTable();
+    SM.lastEntryDate = entryDateIso;
+    SM.lastCutoff = cutoff;
+  } catch (e) { /* Kennzahlen bleiben leer - Formularfelder aus der Position sind trotzdem gesetzt */ }
+  document.querySelector('[data-tab="label"]').click();
 };
 
 // ---------- ORB-Durchbruch-Ergebnisse (R-Multiple, sobald der Kurs waehrend
@@ -179,7 +294,8 @@ SM._updatePositionOverlay = function () {
   const ttEl = SM.$('posTooltip');
   if (entryX != null && entryY != null) {
     ttEl.style.display = 'block'; ttEl.style.left = entryX + 'px'; ttEl.style.top = entryY + 'px';
-    ttEl.textContent = `Open PnL: ${openPnl.toFixed(2)}, Qty: ${p.qty}, R:R ${rr.toFixed(2)}`;
+    const statusText = p.closedReason ? ` — GESCHLOSSEN (${p.closedReason === 'stop' ? 'Stop' : p.closedReason === 'target' ? 'Ziel' : 'manuell'})` : '';
+    ttEl.textContent = `Open PnL: ${openPnl.toFixed(2)}, Qty: ${p.qty}, R:R ${rr.toFixed(2)}${statusText}`;
   } else ttEl.style.display = 'none';
 };
 
@@ -210,7 +326,7 @@ SM._maybeComputeExitMetrics = function () {
   const windowBars = dailyCache.bars.filter((b) => b.time >= from && b.time <= to);
   const riskUnit = p.entryPrice - p.stopPrice;
   if (!windowBars.length || riskUnit === 0) return;
-  const exitPrice = windowBars[windowBars.length - 1].close;
+  const exitPrice = p.exitPrice != null ? p.exitPrice : windowBars[windowBars.length - 1].close;
   const resultR = (exitPrice - p.entryPrice) / riskUnit;
   const mfeR = (Math.max(...windowBars.map((b) => b.high)) - p.entryPrice) / riskUnit;
   const maeR = (p.entryPrice - Math.min(...windowBars.map((b) => b.low))) / riskUnit;
@@ -241,7 +357,7 @@ SM.initPositionTool = function () {
   container.addEventListener('mousedown', (e) => {
     if (SM.drawingArmed) return; // Zeichen-Werkzeug hat Vorrang am selben Container
     const { x, y } = SM._posXY(e);
-    if (SM.position) {
+    if (SM.position && !SM.position.closedReason) {
       const hit = SM._posHandleHit(x, y);
       if (hit) {
         SM.position.dragging = hit;
@@ -250,18 +366,23 @@ SM.initPositionTool = function () {
         return;
       }
     }
-    if (SM.positionArmed && !SM.position) {
+    // Positions-Werkzeug weiterhin armiert und keine (oder eine bereits
+    // geschlossene) Position -> neue Position starten. Eine geschlossene
+    // Position blockiert eine neue nicht mehr ("wenn ich den geschlossen habe
+    // ... moechte ich einen neuen anlegen koennen").
+    if (SM.positionArmed && (!SM.position || SM.position.closedReason)) {
+      if (SM.position) SM.clearPosition();
       const ts = SM.chartState.chart.timeScale();
       const timeUnix = ts.coordinateToTime(x);
       const price = SM.chartState.candleSeries.coordinateToPrice(y);
       if (timeUnix == null || price == null) return;
       const entryTimeUnix = SM._snapToBar(timeUnix);
-      const seedRisk = Math.max(price * 0.01, 0.01);
+      const seedRisk = SM._defaultSeedRisk(price);
       SM.position = {
         entryTimeUnix, entryPrice: price,
         stopPrice: price - seedRisk, targetPrice: price + seedRisk * SM.DEFAULT_RR,
-        exitTimeUnix: SM._defaultExitTimeUnix(entryTimeUnix), qty: SM.DEFAULT_QTY,
-        dragging: 'stop',
+        exitTimeUnix: SM._defaultExitTimeUnix(entryTimeUnix), exitPrice: null, closedReason: null,
+        qty: SM.DEFAULT_QTY, dragging: 'stop',
       };
       const rects = SM._createPositionRects();
       SM.position.rectTarget = rects.rectTarget; SM.position.rectStop = rects.rectStop;

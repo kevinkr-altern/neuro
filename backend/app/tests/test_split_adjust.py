@@ -57,6 +57,28 @@ def test_continuity_regression_removes_the_reported_cliff():
     assert abs(adjusted[0]['close'] - adjusted[1]['open']) < 1  # keine kuenstliche Kluft mehr
 
 
+def test_adjust_volume_false_scales_only_price_not_volume():
+    """Regressionstest fuer den gemeldeten Bug: EODHDs /eod-Volumen (daily UND
+    weekly) ist bereits auf die aktuelle Aktienzahl umgerechnet (live gegen
+    EODHD geprueft - adjusted_close * rohes Volumen ergibt ein plausibles
+    Dollar-Volumen, raw close * rohes Volumen nicht). adjust_volume=False
+    darf deshalb NUR die Preise skalieren, das Volumen 1:1 durchreichen -
+    sonst entsteht eine Doppel-Anpassung (beobachtet: "13B+ Aktien" statt
+    realer ~20-40M fuer alte NVDA-Tage)."""
+    bar = {'date': '2019-01-01', 'open': 100, 'high': 110, 'low': 90, 'close': 105, 'volume': 1000}
+    out = adjust_bar(bar, 2.0, adjust_volume=False)
+    assert out['close'] == 52.5
+    assert out['volume'] == 1000  # unveraendert, NICHT verdoppelt
+
+
+def test_adjust_bars_adjust_volume_false_propagates_to_every_row():
+    splits = [{'split_date': '2024-06-10', 'ratio': 2.0}]
+    bars = [{'date': '2024-06-01', 'open': 100, 'high': 100, 'low': 100, 'close': 100, 'volume': 500}]
+    out = adjust_bars(bars, splits, adjust_volume=False)
+    assert out[0]['close'] == 50.0
+    assert out[0]['volume'] == 500
+
+
 def test_intraday_row_shape_uses_time_prefix_as_date():
     """Intraday-Zeilen haben 'time' als ISO-Zeitstempel statt 'date' - die
     ersten 10 Zeichen muessen als Datum fuer den Split-Vergleich reichen."""

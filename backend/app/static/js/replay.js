@@ -32,11 +32,19 @@ SM.replaySetStart = function (clickedIndex) {
   if (clickedIndex < 0 || clickedIndex >= bars.length) return;
   SM.replay.revealIndex = clickedIndex;
   SM.replay.positionTime = bars[clickedIndex].time;
-  SM._replayRedraw();
+  SM._replayRedraw({ resetZoom: true });
   SM.updateReplayPosLabel();
 };
 
-SM._replayRedraw = function () {
+// resetZoom nur bei einem echten Wechsel der Bar-MENGE/-Zeitebene setzen
+// (Start waehlen, Zeitebenen-Wechsel, Tag-Drilldown/Rueckkehr) - dort MUSS
+// der sichtbare Bereich neu berechnet werden, sonst zeigt die Koordinaten-
+// Umrechnung grossflaechig null (siehe Kommentar unten). Bei reiner
+// Navigation INNERHALB derselben Bar-Menge (Schritt zurueck, Scrubber) darf
+// der Zoom/Pan-Zustand des Nutzers NICHT angefasst werden - das war der
+// gemeldete Bug ("zerstoert die Formatierung, muss den Chart immer wieder
+// zurechtschieben").
+SM._replayRedraw = function (opts) {
   const cs = SM.chartState;
   const visible = cs.bars.slice(0, SM.replay.revealIndex + 1);
   cs.candleSeries.setData(SM.barsToSeriesData(visible));
@@ -48,13 +56,14 @@ SM._replayRedraw = function () {
     const pts = (cs.indicators[key] || []).filter((p) => SM.toUnixTime(p.time) <= cutoffUnix);
     cs.lineSeries[key].setData(SM.indicatorToSeriesData(pts));
   }
-  // Sichtbaren Zeitbereich auf den neu gesetzten Datensatz zuruecksetzen -
-  // ohne das bleibt die Zoom/Pan-Position von VOR dem Zeitebenen-Wechsel
-  // (z.B. ein 40-Jahres-Ueberblick) stehen, wodurch nach einem Wechsel auf
-  // eine kleine Datenmenge (z.B. ein einzelner Intraday-Tag) fast die ganze
-  // Chart-Flaeche auf keine echte Kerze mehr zeigt - Koordinaten-Umrechnung
-  // (fuer Klicks/Positions-Werkzeug) liefert dann grossflaechig null.
-  cs.chart.timeScale().fitContent();
+  if (opts && opts.resetZoom) {
+    // Sichtbaren Zeitbereich auf den neu gesetzten Datensatz zuruecksetzen -
+    // ohne das bleibt die Zoom/Pan-Position von VOR dem Wechsel (z.B. ein
+    // 40-Jahres-Ueberblick) stehen, wodurch nach einem Wechsel auf eine
+    // kleine Datenmenge (z.B. ein einzelner Intraday-Tag) fast die ganze
+    // Chart-Flaeche auf keine echte Kerze mehr zeigt.
+    cs.chart.timeScale().fitContent();
+  }
 };
 
 SM.replayPlay = function () {
@@ -142,6 +151,7 @@ SM.updateReplayPosLabel = function () {
   const el = document.getElementById('replayPos');
   if (el) el.textContent = SM.replay.positionTime ? `Position: ${SM.replay.positionTime}` : '';
   SM.syncReplayScrub();
+  SM._maybeAutoCloseOnStop();
 };
 
 // Scrubber (Range-Slider) + Zaehler mit der aktuellen Replay-Position
@@ -172,6 +182,6 @@ SM.replayOnTimeframeSwitch = function (newBars, newIndicators, newTimeframe) {
     if (SM.toUnixTime(newBars[i].time) + dur <= posUnix) idx = i; else break;
   }
   SM.replay.revealIndex = idx;
-  SM._replayRedraw();
+  SM._replayRedraw({ resetZoom: true });
   SM.updateReplayPosLabel();
 };

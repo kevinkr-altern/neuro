@@ -10,7 +10,14 @@
 var SM = window.SM = window.SM || {};
 
 SM.miniChart = { chart: null, candleSeries: null, volumeSeries: null };
-SM.miniReplay = { bars: [], revealIndex: -1, playing: false, timer: null, speedMs: 600, dayDate: null };
+SM.miniReplay = { bars: [], revealIndex: -1, playing: false, timer: null, speedMs: 600, dayDate: null, timeframe: '5m' };
+
+SM.setMiniTimeframe = function (tf) {
+  if (SM.miniReplay.timeframe === tf) return;
+  SM.miniReplay.timeframe = tf;
+  document.querySelectorAll('#miniTfGroup [data-mini-tf]').forEach((b) => b.classList.toggle('active', b.dataset.miniTf === tf));
+  if (SM.miniReplay.dayDate) SM._loadMiniDay(SM.miniReplay.dayDate);
+};
 
 SM._ensureMiniChart = function () {
   if (SM.miniChart.chart) return;
@@ -54,11 +61,11 @@ SM._loadMiniDay = async function (date) {
   SM.miniReplayPause();
   const ticker = SM.$('ticker').value.trim().toUpperCase();
   try {
-    const r = await SM.getChartData(ticker, '5m', date, date);
+    const r = await SM.getChartData(ticker, SM.miniReplay.timeframe, date, date);
     SM.miniReplay.bars = r.bars;
     SM.miniReplay.dayDate = date;
     SM.miniReplay.revealIndex = r.bars.length ? 0 : -1;
-    SM.$('miniChartDate').textContent = r.bars.length ? date : `${date} (keine 5m-Kerzen)`;
+    SM.$('miniChartDate').textContent = r.bars.length ? date : `${date} (keine Kerzen auf dieser Zeitebene)`;
     SM._miniRedraw();
   } catch (e) { SM.showErr(e.message); }
 };
@@ -164,6 +171,9 @@ SM.closeMiniChart = function () {
 
 SM.initMiniChart = function () {
   SM.$('btnOpenMiniChart').addEventListener('click', SM.openMiniChartForPausedDay);
+  document.querySelectorAll('#miniTfGroup [data-mini-tf]').forEach((btn) => {
+    btn.addEventListener('click', () => SM.setMiniTimeframe(btn.dataset.miniTf));
+  });
   SM.$('miniPlay').addEventListener('click', () => { SM.miniReplay.playing ? SM.miniReplayPause() : SM.miniReplayPlay(); });
   SM.$('miniStepBack').addEventListener('click', SM.miniReplayStepBack);
   SM.$('miniStep').addEventListener('click', SM.miniReplayStep);
