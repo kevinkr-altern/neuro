@@ -46,6 +46,13 @@ SM._replayRedraw = function () {
     const pts = (cs.indicators[key] || []).filter((p) => SM.toUnixTime(p.time) <= cutoffUnix);
     cs.lineSeries[key].setData(SM.indicatorToSeriesData(pts));
   }
+  // Sichtbaren Zeitbereich auf den neu gesetzten Datensatz zuruecksetzen -
+  // ohne das bleibt die Zoom/Pan-Position von VOR dem Zeitebenen-Wechsel
+  // (z.B. ein 40-Jahres-Ueberblick) stehen, wodurch nach einem Wechsel auf
+  // eine kleine Datenmenge (z.B. ein einzelner Intraday-Tag) fast die ganze
+  // Chart-Flaeche auf keine echte Kerze mehr zeigt - Koordinaten-Umrechnung
+  // (fuer Klicks/Positions-Werkzeug) liefert dann grossflaechig null.
+  cs.chart.timeScale().fitContent();
 };
 
 SM.replayPlay = function () {
@@ -69,10 +76,11 @@ SM.replayTick = function () {
   SM.replay.revealIndex++;
   const cs = SM.chartState;
   const bar = bars[SM.replay.revealIndex];
+  const colors = cs.volumeSeriesColors || { up: 'rgba(85,217,141,0.5)', down: 'rgba(255,107,107,0.5)' };
   cs.candleSeries.update({ time: SM.toUnixTime(bar.time), open: bar.open, high: bar.high, low: bar.low, close: bar.close });
   cs.volumeSeries.update({
     time: SM.toUnixTime(bar.time), value: bar.volume || 0,
-    color: bar.close >= bar.open ? 'rgba(85,217,141,0.5)' : 'rgba(255,107,107,0.5)',
+    color: bar.close >= bar.open ? colors.up : colors.down,
   });
   for (const key of Object.keys(cs.lineSeries)) {
     const pt = (cs.indicators[key] || []).find((p) => p.time === bar.time);
@@ -84,7 +92,29 @@ SM.replayTick = function () {
 
 SM.replayStep = function () { if (!SM.replay.playing) SM.replayTick(); };
 
+// Kennzahlen-Panel lebt mit der Replay-Position mit: bei jedem Fortschritt
+// (Start/Tick/Schritt) wird automatisch, entprellt, derselbe bestehende,
+// unveraenderte Look-ahead-geschuetzte /api/charts-Cutoff-Pfad aufgerufen -
+// "Setup hier markieren" ist damit nur noch eine Speicher-Bestaetigung der
+// bereits sichtbaren Zahlen, nicht mehr deren Ausloeser.
+SM._metricsRefreshTimer = null;
+SM.scheduleMetricsRefresh = function () {
+  if (SM._metricsRefreshTimer) clearTimeout(SM._metricsRefreshTimer);
+  SM._metricsRefreshTimer = setTimeout(SM._refreshMetricsFromReplayPosition, 400);
+};
+SM._refreshMetricsFromReplayPosition = async function () {
+  if (!SM.replay.positionTime) return;
+  const { date, cutoff } = SM.deriveCutoffFromReplay();
+  if (!date) return;
+  try {
+    const r = await SM.getChartCutoff(SM.$('ticker').value, date, '5m', cutoff);
+    SM.metrics = r.metrics || {};
+    SM.fillMetricsTable();
+  } catch (e) { /* stiller Fehlschlag - Kennzahlen bleiben auf dem letzten gueltigen Stand */ }
+};
+
 SM.updateReplayPosLabel = function () {
+  SM.scheduleMetricsRefresh();
   const el = document.getElementById('replayPos');
   if (el) el.textContent = SM.replay.positionTime ? `Position: ${SM.replay.positionTime}` : '';
 };

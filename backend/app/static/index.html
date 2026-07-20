@@ -18,6 +18,8 @@
   </div>
   <div class="topbar-right">
     <button id="btnReplayToggle">Replay aktivieren</button>
+    <button id="btnSettings" title="Chart-Stil aendern">⚙</button>
+    <div id="settingsPanel" class="settings-panel hidden"></div>
   </div>
 </header>
 
@@ -45,10 +47,13 @@
         <button data-marker="stop" title="Taste S">S Stop</button>
         <button data-marker="pivot" title="Taste P">P Pivot</button>
       </span>
+      <button id="btnPositionTool" title="Position platzieren: klicken und im Chart ziehen">Position-Tool</button>
+      <button id="btnClearPosition" title="Positions-Werkzeug entfernen">✕ Position</button>
       <button id="btnMarkSetup">Setup hier markieren</button>
+      <button id="btnBackToDaily" class="hidden" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
       <span id="replayPos" class="replay-pos hint"></span>
     </div>
-    <p class="hint">Replay: Kerze anklicken = Startpunkt. Danach Play/Pause/Schritt. Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position; Marker-Buttons erlauben Klick-Platzierung auf jede bereits aufgedeckte Kerze.</p>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Danach Play/Pause/Schritt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen.</p>
   </section>
 
   <aside class="sidebar">
@@ -70,6 +75,7 @@
       <label>MAE<input id="mae_r" type="number" step="0.1" size="5"></label>
       <label>Entry-Preis<input id="entry_price" type="number" step="0.01" size="7"></label>
       <label>Stop<input id="stop_price" type="number" step="0.01" size="7"></label>
+      <label>Ziel<input id="target_price" type="number" step="0.01" size="7"></label>
       <label>Pivot<input id="pivot_level_price" type="number" step="0.01" size="7"></label><br>
       <textarea id="notes" placeholder="Freitextnotiz" rows="3"></textarea><br>
       <button id="btnSaveLabel">Label speichern</button>
@@ -98,9 +104,14 @@
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/chart.js"></script>
+<script src="/static/js/chartprimitives.js"></script>
+<script src="/static/js/orb.js"></script>
+<script src="/static/js/positiontool.js"></script>
 <script src="/static/js/replay.js"></script>
 <script src="/static/js/markers.js"></script>
 <script src="/static/js/labels.js"></script>
 <script src="/static/js/importexport.js"></script>
+<script src="/static/js/drilldown.js"></script>
+<script src="/static/js/settingspanel.js"></script>
 <script src="/static/js/app.js"></script>
 </body></html>

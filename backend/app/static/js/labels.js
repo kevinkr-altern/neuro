@@ -68,6 +68,7 @@ SM.saveLabel = async function () {
       mae_r: SM.$('mae_r').value ? +SM.$('mae_r').value : null,
       entry_price: SM.$('entry_price').value ? +SM.$('entry_price').value : null,
       stop_price: SM.$('stop_price').value ? +SM.$('stop_price').value : null,
+      target_price: SM.$('target_price').value ? +SM.$('target_price').value : null,
       pivot_level_price: SM.$('pivot_level_price').value ? +SM.$('pivot_level_price').value : null,
       notes: SM.$('notes').value,
       cutoff_timestamp: `${SM.lastEntryDate} ${SM.lastCutoff} ET`,

@@ -9,6 +9,7 @@ from app.core.db import conn, symbol_id
 from app.providers.eodhd import check_m5, EodhdError
 from app.services.market_data import (
     ensure_m5, ensure_daily_history, ensure_weekly_history, ensure_m5_history, ensure_m5_earliest,
+    ensure_splits_history,
     intraday_bars, intraday_bars_range, daily_bars_range, weekly_bars_range, indicator_series,
     compute_metrics, DAILY_HISTORY_FLOOR,
 )
@@ -72,12 +73,17 @@ class ChartRequest(BaseModel):
 
 async def _load_chart(ticker, date, timeframe, cutoff):
     warnings = []
+    today = datetime.now(timezone.utc).date().isoformat()
     try:
         await ensure_m5(ticker, date)
     except EodhdError as e:
         raise HTTPException(400, str(e))
     try:
         await ensure_daily_history(ticker, date)
+        # date_to=heute (nicht das Entry-Datum!), sonst werden Splits NACH dem
+        # Entry-Tag nie erfasst und die Rueckrechnung auf split-bereinigte
+        # Kurse bleibt unvollstaendig.
+        await ensure_splits_history(ticker, today)
     except EodhdError as e:
         warnings.append(f'Daily-Daten nicht geladen: {e}')
     bars = intraday_bars(ticker, date, timeframe, cutoff)
@@ -109,6 +115,7 @@ async def chart_data(ticker: str, timeframe: str = '1d', date_from: str | None =
     date_to = date_to or today
     m5_info = None
     try:
+        await ensure_splits_history(ticker, today)
         if timeframe in ('1d', '1w'):
             date_from = date_from or DAILY_HISTORY_FLOOR
             await ensure_daily_history(ticker, date_to, date_from)
@@ -150,7 +157,7 @@ class SetupIn(BaseModel):
     ticker: str; exchange: str = 'US'; setup_name: str = ''
     entry_date: str; entry_time: str | None = None; entry_price: float | None = None
     exit_date: str | None = None; exit_time: str | None = None; exit_price: float | None = None
-    stop_price: float | None = None; pivot_level_price: float | None = None
+    stop_price: float | None = None; target_price: float | None = None; pivot_level_price: float | None = None
     label_class: str; structure: str; trigger: str; tactic: str
     level_name: str | None = None; orderly_rating: int | None = None
     result_r: float | None = None; result_is_hypothetical: bool = False
@@ -168,10 +175,10 @@ def create_label(s: SetupIn):
     try:
         with conn() as c:
             cur = c.execute(
-                "insert into setups(symbol_id,setup_name,label_class,structure,trigger,tactic,level_name,orderly_rating,result_r,result_is_hypothetical,mfe_r,mae_r,notes,entry_date,entry_time,entry_price,exit_date,exit_time,exit_price,stop_price,pivot_level_price,cutoff_timestamp,was_playback_enforced,data_status) "
-                "values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into setups(symbol_id,setup_name,label_class,structure,trigger,tactic,level_name,orderly_rating,result_r,result_is_hypothetical,mfe_r,mae_r,notes,entry_date,entry_time,entry_price,exit_date,exit_time,exit_price,stop_price,target_price,pivot_level_price,cutoff_timestamp,was_playback_enforced,data_status) "
+                "values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (sid, name, s.label_class, s.structure, s.trigger, s.tactic, s.level_name, s.orderly_rating, s.result_r, int(s.result_is_hypothetical), s.mfe_r, s.mae_r, s.notes,
-                 entry_date, s.entry_time, s.entry_price, s.exit_date, s.exit_time, s.exit_price, s.stop_price, s.pivot_level_price, s.cutoff_timestamp, int(s.was_playback_enforced), 'gespeichert'))
+                 entry_date, s.entry_time, s.entry_price, s.exit_date, s.exit_time, s.exit_price, s.stop_price, s.target_price, s.pivot_level_price, s.cutoff_timestamp, int(s.was_playback_enforced), 'gespeichert'))
             setup_id = cur.lastrowid
             if s.was_playback_enforced:
                 c.execute("insert into playback_sessions(setup_id,symbol_id,entry_date,cutoff_timestamp,was_playback_enforced) values(?,?,?,?,1)", (setup_id, sid, entry_date, s.cutoff_timestamp))

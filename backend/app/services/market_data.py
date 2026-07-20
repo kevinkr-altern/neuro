@@ -2,12 +2,13 @@ from datetime import datetime, timezone, timedelta, date as date_cls
 from functools import partial
 from zoneinfo import ZoneInfo
 from app.core.db import conn, symbol_id
-from app.providers.eodhd import fetch_intraday, fetch_eod
+from app.providers.eodhd import fetch_intraday, fetch_eod, fetch_splits
 from app.core.market_calendar import is_half_trading_day, PLATFORM_5M_SEARCH_FLOOR
 from app.indicators.formulas import (
     wilder_atr_last, adr_pct_last, lod_distance_pct, atr_extension,
     sma_last, ema_last, volatility_compression_proxy, sma, ema,
 )
+from app.services.split_adjust import parse_split_ratio, adjust_bars
 
 ET = ZoneInfo('America/New_York')
 SESSION_START_MIN = 9 * 60 + 30  # 09:30 ET
@@ -112,6 +113,30 @@ async def ensure_weekly_history(ticker: str, date_to: str, date_from: str = DAIL
                 c.execute("insert or ignore into price_bars_weekly values(?,?,?,?,?,?,?,?,?,current_timestamp)", (sid, r['date'], r['open'], r['high'], r['low'], r['close'], r.get('adjusted_close'), r.get('volume'), 'EODHD'))
         _extend_watermark(sid, '1w', gfrom, gto, 'cached', f'{len(rows)} Wochenkerzen geprueft/geladen')
     return sid
+
+async def ensure_splits_history(ticker: str, date_to: str, date_from: str = DAILY_HISTORY_FLOOR):
+    """Laedt die Split-Historie (fuer die Rueckrechnung auf split-bereinigte
+    Kurse - siehe split_adjust.py). WICHTIG: date_to muss das heutige
+    Wall-Clock-Datum sein, nicht das angefragte Chart-/Entry-Datum, sonst
+    werden Splits NACH dem Entry-Tag nie erfasst und die Rueckrechnung ist
+    unvollstaendig."""
+    sid = symbol_id(ticker)
+    cached_from, cached_to = _get_watermark(sid, 'splits')
+    for gfrom, gto in coverage_gaps(cached_from, cached_to, date_from, date_to):
+        rows = await fetch_splits(ticker if '.' in ticker else f'{ticker}.US', gfrom, gto)
+        with conn() as c:
+            for r in rows:
+                try:
+                    ratio = parse_split_ratio(r['split'])
+                except (ValueError, KeyError):
+                    continue  # eine kaputte Split-Zeile darf den ganzen Chart-Load nicht crashen
+                c.execute("insert or replace into splits_history values(?,?,?,?,?,current_timestamp)", (sid, r['date'], ratio, r.get('split'), 'EODHD'))
+        _extend_watermark(sid, 'splits', gfrom, gto, 'cached', f'{len(rows)} Splits geprueft/geladen')
+    return sid
+
+def _load_splits(sid: int) -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("select split_date, ratio from splits_history where symbol_id=? order by split_date", (sid,))]
 
 EODHD_5M_MAX_WINDOW_DAYS = 550  # Puffer unter EODHDs dokumentiertem 600-Tage-Limit fuer interval=5m
 
@@ -222,7 +247,10 @@ def _regular_intraday(sid: int, date: str, cutoff_et: str | None):
         if cutoff_et and r['time'][11:19] >= cutoff_et:
             continue
         out.append(r)
-    return out
+    # Split-Rueckrechnung als reine Werteumrechnung NACH der Zeilenauswahl -
+    # die Menge/Reihenfolge der zurueckgegebenen Zeilen (und damit der
+    # Look-ahead-Schutz) bleibt unveraendert, nur die Zahlenwerte skalieren.
+    return adjust_bars(out, _load_splits(sid))
 
 _TIMEFRAME_MINUTES = {'15m': 15, '30m': 30, '1h': 60}
 
@@ -277,7 +305,8 @@ def _regular_intraday_range(sid: int, date_from: str, date_to: str):
             "and substr(timestamp_utc,1,10) between ? and ? "
             "order by timestamp_utc", (sid, date_from, date_to))]
     rows = _drop_broken_ohlc(rows)
-    return [r for r in rows if _mins_since_open(r['time']) >= 0]
+    rows = [r for r in rows if _mins_since_open(r['time']) >= 0]
+    return adjust_bars(rows, _load_splits(sid))
 
 def intraday_bars_range(ticker: str, date_from: str, date_to: str, timeframe: str = '5m'):
     sid = symbol_id(ticker)
@@ -289,16 +318,20 @@ def intraday_bars_range(ticker: str, date_from: str, date_to: str, timeframe: st
 def daily_bars_range(ticker: str, date_from: str, date_to: str):
     sid = symbol_id(ticker)
     with conn() as c:
-        return [dict(r) for r in c.execute(
+        rows = [dict(r) for r in c.execute(
             "select date as time, open, high, low, close, volume from price_bars_daily "
             "where symbol_id=? and date between ? and ? order by date", (sid, date_from, date_to))]
+    rows = _drop_broken_ohlc(rows)
+    return adjust_bars(rows, _load_splits(sid))
 
 def weekly_bars_range(ticker: str, date_from: str, date_to: str):
     sid = symbol_id(ticker)
     with conn() as c:
-        return [dict(r) for r in c.execute(
+        rows = [dict(r) for r in c.execute(
             "select date as time, open, high, low, close, volume from price_bars_weekly "
             "where symbol_id=? and date between ? and ? order by date", (sid, date_from, date_to))]
+    rows = _drop_broken_ohlc(rows)
+    return adjust_bars(rows, _load_splits(sid))
 
 def indicator_series(bars: list[dict]) -> dict:
     """EMA10/EMA20/SMA50/SMA200 fuer die uebergebenen Kerzen (zeitebenen-nativ:
@@ -319,11 +352,15 @@ def indicator_series(bars: list[dict]) -> dict:
     }
 
 def _daily_before(sid: int, date: str):
-    """Abgeschlossene Daily-Kerzen STRIKT vor dem Entry-Tag (kein Look-ahead)."""
+    """Abgeschlossene Daily-Kerzen STRIKT vor dem Entry-Tag (kein Look-ahead).
+    Split-Rueckrechnung als reine Werteumrechnung NACH der 'date<?'-Auswahl -
+    die Zeilenauswahl (und damit der Look-ahead-Schutz) bleibt unveraendert."""
     with conn() as c:
-        return [dict(r) for r in c.execute(
+        rows = [dict(r) for r in c.execute(
             "select date, open, high, low, close, volume from price_bars_daily where symbol_id=? and date<? order by date",
             (sid, date))]
+    rows = _drop_broken_ohlc(rows)
+    return adjust_bars(rows, _load_splits(sid))
 
 def compute_metrics(ticker: str, date: str, cutoff_et: str | None = None):
     """Kennzahlen-Panel, look-ahead-sicher: Intraday bis Cutoff, Daily bis Vortag."""

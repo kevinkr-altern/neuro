@@ -19,6 +19,7 @@ _SETUP_COLUMNS = {
     'exit_time': 'text',
     'exit_price': 'real',
     'stop_price': 'real',
+    'target_price': 'real',
     'pivot_level_price': 'real',
     'cutoff_timestamp': 'text',
     'was_playback_enforced': 'integer default 0',
@@ -40,6 +41,7 @@ def init_db():
         create table if not exists price_bars_intraday(symbol_id integer, timestamp_utc text, timestamp_et text, interval text, open real, high real, low real, close real, volume real, is_regular_session integer, derived_from_interval text, source text, fetched_at text default current_timestamp, primary key(symbol_id,timestamp_utc,interval));
         create table if not exists data_availability(symbol_id integer, interval text, first_available_at text, last_available_at text, checked_at text default current_timestamp, status text, message text, primary key(symbol_id,interval));
         create table if not exists price_bars_weekly(symbol_id integer, date text, open real, high real, low real, close real, adjusted_close real, volume real, source text, fetched_at text default current_timestamp, primary key(symbol_id,date));
+        create table if not exists splits_history(symbol_id integer, split_date text, ratio real, raw_ratio_str text, source text, fetched_at text default current_timestamp, primary key(symbol_id,split_date));
         create table if not exists setups(id integer primary key, symbol_id integer, setup_name text, label_class text, structure text, trigger text, tactic text, level_name text, orderly_rating integer, result_r real, result_is_hypothetical integer default 0, mfe_r real, mae_r real, notes text, source text default 'ui', created_at text default current_timestamp, updated_at text default current_timestamp);
         create table if not exists setup_markers(id integer primary key, setup_id integer, marker_type text, timestamp text, price real, timeframe text, note text);
         create table if not exists import_batches(id integer primary key, filename text, uploaded_at text default current_timestamp, row_count integer, status text, mapping_json text, errors_json text);
