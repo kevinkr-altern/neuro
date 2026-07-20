@@ -25,6 +25,13 @@ _SETUP_COLUMNS = {
     'data_status': 'text',
 }
 
+# Wasserstandsmarken fuer inkrementelles Nachladen (m5/daily/weekly), damit
+# nicht bei jedem Chart-Laden der komplette Bereich neu abgefragt wird.
+_AVAILABILITY_COLUMNS = {
+    'cached_from': 'text',
+    'cached_to': 'text',
+}
+
 def init_db():
     with conn() as c:
         c.executescript('''
@@ -32,6 +39,7 @@ def init_db():
         create table if not exists price_bars_daily(symbol_id integer, date text, open real, high real, low real, close real, adjusted_close real, volume real, source text, fetched_at text default current_timestamp, primary key(symbol_id,date));
         create table if not exists price_bars_intraday(symbol_id integer, timestamp_utc text, timestamp_et text, interval text, open real, high real, low real, close real, volume real, is_regular_session integer, derived_from_interval text, source text, fetched_at text default current_timestamp, primary key(symbol_id,timestamp_utc,interval));
         create table if not exists data_availability(symbol_id integer, interval text, first_available_at text, last_available_at text, checked_at text default current_timestamp, status text, message text, primary key(symbol_id,interval));
+        create table if not exists price_bars_weekly(symbol_id integer, date text, open real, high real, low real, close real, adjusted_close real, volume real, source text, fetched_at text default current_timestamp, primary key(symbol_id,date));
         create table if not exists setups(id integer primary key, symbol_id integer, setup_name text, label_class text, structure text, trigger text, tactic text, level_name text, orderly_rating integer, result_r real, result_is_hypothetical integer default 0, mfe_r real, mae_r real, notes text, source text default 'ui', created_at text default current_timestamp, updated_at text default current_timestamp);
         create table if not exists setup_markers(id integer primary key, setup_id integer, marker_type text, timestamp text, price real, timeframe text, note text);
         create table if not exists import_batches(id integer primary key, filename text, uploaded_at text default current_timestamp, row_count integer, status text, mapping_json text, errors_json text);
@@ -46,6 +54,11 @@ def init_db():
                 c.execute(f"alter table setups add column {col} {decl}")
         # Duplikat-Schutz: gleicher Ticker + gleiches Entry-Datum nur einmal.
         c.execute("create unique index if not exists ux_setups_symbol_date on setups(symbol_id, entry_date) where entry_date is not null")
+        # Neue data_availability-Spalten fuer Bestands-DBs nachziehen.
+        have_avail = {r[1] for r in c.execute("pragma table_info(data_availability)")}
+        for col, decl in _AVAILABILITY_COLUMNS.items():
+            if col not in have_avail:
+                c.execute(f"alter table data_availability add column {col} {decl}")
 
 def symbol_id(ticker: str, exchange: str='US') -> int:
     eod = ticker if '.' in ticker else f"{ticker}.{exchange}"
