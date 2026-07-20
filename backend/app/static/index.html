@@ -1,0 +1,141 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup-Miner</title><style>
+body{margin:0;background:#0b111a;color:#eaf1ff;font-family:Inter,system-ui,Arial}main{max-width:1280px;margin:auto;padding:24px}
+h1{font-size:22px}h2{font-size:16px;margin:0 0 8px}
+.panel{background:#121b29;border:1px solid #24364d;border-radius:12px;padding:16px;margin:14px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+canvas{width:100%;height:460px;background:#101722;border:1px solid #24364d;border-radius:12px;display:block}
+.warn{background:#32260b;border:1px solid #8a650e;padding:12px;border-radius:8px}
+.error{white-space:pre-wrap;background:#3a1212;border:1px solid #9d3333;padding:12px;border-radius:8px}
+.msg{background:#102c1c;border:1px solid #2d8a52;padding:10px;border-radius:8px}
+.banner{background:#0e2038;border:1px solid #2f6fb3;padding:8px 12px;border-radius:8px;font-weight:600}
+input,select,textarea,button{margin:4px;padding:8px;border-radius:8px;border:1px solid #3b506b;background:#0b111a;color:#eaf1ff}
+button{cursor:pointer;background:#214d86}button:hover{background:#2a63aa}
+label{display:inline-block;margin-right:10px;font-size:13px}
+td{border-top:1px solid #24364d;padding:6px 8px;font-size:13px}table{width:100%;border-collapse:collapse}
+a{color:#8fc2ff;margin:0 12px}.mono{font-variant-numeric:tabular-nums}
+.kv td:first-child{color:#9fb4d6}.bad{color:#ff8b8b}.ok{color:#8ef0b0}.hint{color:#9fb4d6;font-size:12px}
+</style></head><body><main>
+<h1>Setup-Miner · Phase 1 Labeling</h1>
+<p class="warn">Keine kuenstlichen Intraday-Daten. m15/m30 entstehen nur aus echten m5-Kerzen; unvollstaendige Fenster werden markiert. Playback-Cutoff wird serverseitig erzwungen – nur bis zur Cutoff-Zeit abgeschlossene Kerzen werden gezeigt (die zur Cutoff-Zeit startende Kerze noch nicht).</p>
+<div id="banner"></div><div id="err"></div><div id="msg"></div>
+
+<section class="panel"><h2>Daten &amp; Playback</h2>
+<label>Ticker<input id="ticker" value="NVDA" size="6"></label>
+<label>Entry-Datum<input id="date" type="date" value="2021-11-01"></label>
+<label>Cutoff ET (HH:MM:SS)<input id="cutoff" placeholder="10:00:00" size="9"></label>
+<label>Timeframe<select id="tf"><option value="5m">m5</option><option value="15m">m15</option><option value="30m">m30</option></select></label>
+<button onclick="checkM5()">m5-Verfuegbarkeit pruefen</button>
+<button onclick="loadChart()">Chart laden</button>
+<p class="hint">Pfeiltasten ← → : Kerze waehlen. Tasten E/X/S/P : Marker (Entry/Exit/Stop/Pivot) auf die gewaehlte Kerze setzen (nur bis Cutoff erlaubt).</p>
+</section>
+
+<canvas id="chart" width="1240" height="460"></canvas>
+<p class="hint" id="chartinfo"></p>
+
+<section class="grid">
+<div class="panel"><h2>Kennzahlen-Panel</h2><table class="kv mono"><tbody id="metrics"></tbody></table></div>
+<div class="panel"><h2>Label</h2>
+<p><b>Name:</b> <span id="setupName" class="ok"></span></p>
+<div id="form"></div>
+<label>Level<select id="level_name" onchange="nameIt()"></select></label>
+<label>Orderly 1–5<input id="orderly_rating" type="number" min="1" max="5" value="4" size="3"></label>
+<label>Ergebnis R<input id="result_r" type="number" step="0.1" size="5"></label>
+<label><input id="result_is_hypothetical" type="checkbox"> hypothetisch</label>
+<label>MFE<input id="mfe_r" type="number" step="0.1" size="5"></label>
+<label>MAE<input id="mae_r" type="number" step="0.1" size="5"></label>
+<label>Entry-Preis<input id="entry_price" type="number" step="0.01" size="7"></label>
+<label>Stop<input id="stop_price" type="number" step="0.01" size="7"></label>
+<label>Pivot<input id="pivot_level_price" type="number" step="0.01" size="7"></label><br>
+<textarea id="notes" placeholder="Freitextnotiz" rows="2" cols="60"></textarea><br>
+<button onclick="saveLabel()">Label speichern</button>
+<p class="hint">Ergebnis/MFE/MAE werden gespeichert, aber laut Datenpolitik nicht als Modell-Input verwendet.</p>
+</div></section>
+
+<section class="panel"><h2>CSV-Import / Export / Backup</h2>
+<input id="csv" type="file" accept=".csv">
+<button onclick="importCsv()">CSV importieren</button>
+<a href="/api/exports/labels.csv" target="_blank">Labels CSV</a>
+<a href="/api/exports/labels.json" target="_blank">Labels JSON</a>
+<button onclick="backup()">Backup erstellen</button>
+<button onclick="listBackups()">Backups anzeigen</button>
+<span id="backups"></span>
+<p class="hint">Pflichtspalten: ticker, entry_date, label_class, structure, trigger, tactic. Datum als JJJJ-MM-TT oder TT.MM.JJJJ; Komma als Dezimaltrenner erlaubt.</p>
+</section>
+
+<section class="panel"><h2>Letzte Labels</h2><table><tbody id="labels"></tbody></table></section>
+</main>
+<script>
+const API='';  // gleiche Herkunft: Backend liefert diese Seite selbst aus
+const opts={label_class:['A+','Gut','Neutral','Fehlsignal','Bewusst geskippt'],structure:['HTF','Pullback','Base','EP'],trigger:['Base-BO','U&R','EMA-Reclaim','Reclaim-FT','EP-Trigger'],tactic:['ORB m5','ORB m15','ORB m30','PDH Buy-Stop','Sniper','EOTD'],level_name:['PDH','PDL-Reclaim','ORH m5','ORH m15','ORH m30','Pivot','EMA10','EMA20','Reclaim-Kerzenhoch']};
+let bars=[],metrics={},selected=-1,currentSetupId=null;
+const $=id=>document.getElementById(id);
+function show(id,t,cls){$(id).innerHTML=t?`<pre class="${cls||'msg'}">${t}</pre>`:''}
+async function api(p,o){const r=await fetch(API+'/api'+p,o);if(!r.ok){let m;try{m=(await r.json()).detail||await r.text()}catch{m=await r.text()}throw new Error(m)}return r.json()}
+function v(id){return $(id).value}
+
+function buildForm(){let h='';for(const f of ['label_class','structure','trigger','tactic'])h+=`<label>${f}<select id="${f}" onchange="nameIt()">${opts[f].map(x=>`<option>${x}</option>`).join('')}</select></label>`;$('form').innerHTML=h;$('level_name').innerHTML=opts.level_name.map(x=>`<option>${x}</option>`).join('');nameIt()}
+function nameIt(){$('setupName').textContent=`${v('structure')} / ${v('trigger')} / ${v('tactic')} @ ${v('level_name')}`}
+
+function metricRow(k,val){return `<tr><td>${k}</td><td>${val==null?'—':val}</td></tr>`}
+function fillMetrics(){const m=metrics;const rows=[
+ ['Preis (Cutoff)',m.selected_price],['Low of Day bisher',m.low_of_day_so_far],['Session-Open',m.session_open],
+ ['ATR(14) $',m.atr14_dollars],['LoD-Distance %',m.lod_distance_pct],['LoD ≤70%-Regel',m.lod_rule_70_ok==null?null:(m.lod_rule_70_ok?'erfuellt':'verletzt')],
+ ['ATR-Ext SMA50',m.atr_ext_sma50],['ATR-Ext EMA10',m.atr_ext_ema10],['ATR-Ext EMA21',m.atr_ext_ema21],
+ ['ADR% 14T',m.adr14_pct],['ADR% 20T',m.adr20_pct],['Vol-Compression-Proxy 15T',m.volatility_compression_proxy_15],
+ ['RVOL',m.rvol_projected!=null?m.rvol_projected+' ('+(m.rvol_note||'')+')':null],
+ ['Abstand EMA10 %',m.dist_ema10_pct],['Abstand EMA20 %',m.dist_ema20_pct],['Abstand SMA50 %',m.dist_sma50_pct],['Abstand SMA100 %',m.dist_sma100_pct],['Abstand SMA200 %',m.dist_sma200_pct],
+ ['Gap %',m.gap_pct],['PDH',m.pdh],['PDL',m.pdl],
+ ['ORB m5 H/L',m.orb_m5_valid?m.orb_m5_high+' / '+m.orb_m5_low:'noch nicht gueltig'],
+ ['ORB m15 H/L',m.orb_m15_valid?m.orb_m15_high+' / '+m.orb_m15_low:'noch nicht gueltig'],
+ ['ORB m30 H/L',m.orb_m30_valid?m.orb_m30_high+' / '+m.orb_m30_low:'noch nicht gueltig'],
+ ['Datenstatus',m.data_status]];
+ $('metrics').innerHTML=rows.map(r=>metricRow(r[0],r[1])).join('')}
+
+function draw(){const c=$('chart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);if(!bars.length)return;
+ const padL=48,padR=12,padT=12,volH=70,gap=10;const w=c.width-padL-padR;const h=c.height-padT-volH-gap;
+ const lines=[metrics.pdh,metrics.pdl].filter(x=>x!=null);
+ const hi=Math.max(...bars.map(b=>b.high),...lines),lo=Math.min(...bars.map(b=>b.low),...lines);
+ const x=i=>padL+i*w/Math.max(1,bars.length-1),y=p=>padT+(hi-p)/((hi-lo)||1)*h;
+ ctx.strokeStyle='#1d2a3a';for(let i=0;i<5;i++){const yy=padT+i*h/4;ctx.beginPath();ctx.moveTo(padL,yy);ctx.lineTo(padL+w,yy);ctx.stroke();ctx.fillStyle='#6b83a6';ctx.font='11px system-ui';ctx.fillText((hi-(hi-lo)*i/4).toFixed(2),4,yy+4)}
+ // horizontale Referenzlinien (Tages-MAs sind Level auf dem Intraday-Chart)
+ const refs=[['pdh','#8a8a2e',metrics.pdh],['pdl','#8a8a2e',metrics.pdl]];
+ refs.forEach(([k,col,val])=>{if(val==null)return;ctx.strokeStyle=col;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(padL,y(val));ctx.lineTo(padL+w,y(val));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=col;ctx.fillText(k.toUpperCase(),padL+w-40,y(val)-3)});
+ // Volumen
+ const maxV=Math.max(1,...bars.map(b=>b.volume||0));const vy0=padT+h+gap+volH;
+ bars.forEach((b,i)=>{const vh=(b.volume||0)/maxV*volH;ctx.fillStyle=b.close>=b.open?'#2f6b47':'#6b2f2f';ctx.fillRect(x(i)-3,vy0-vh,6,vh)});
+ // Kerzen
+ bars.forEach((b,i)=>{const up=b.close>=b.open;ctx.strokeStyle=b.incomplete?'#c9a227':(up?'#55d98d':'#ff6b6b');ctx.fillStyle=ctx.strokeStyle;const xx=x(i);ctx.beginPath();ctx.moveTo(xx,y(b.high));ctx.lineTo(xx,y(b.low));ctx.stroke();ctx.fillRect(xx-3,Math.min(y(b.open),y(b.close)),6,Math.max(1,Math.abs(y(b.open)-y(b.close))))});
+ if(selected>=0&&selected<bars.length){ctx.fillStyle='#f6c343';ctx.fillRect(x(selected)-1,padT,2,h)}
+ $('chartinfo').textContent=selected>=0?`Gewaehlt: ${bars[selected].time} · O${bars[selected].open} H${bars[selected].high} L${bars[selected].low} C${bars[selected].close}`+(bars[selected].incomplete?' · UNVOLLSTAENDIG':''):''}
+
+async function loadChart(){try{show('err','');show('msg','Lade echte Daten …');const cutoff=v('cutoff')||null;
+ const r=await api('/charts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:v('ticker'),date:v('date'),timeframe:v('tf'),cutoff_time:cutoff})});
+ bars=r.bars;metrics=r.metrics||{};selected=bars.length-1;draw();fillMetrics();
+ $('banner').innerHTML=`<div class="banner">Playback aktiv · ${v('ticker')} · ${v('date')}${cutoff?' · Cutoff '+cutoff+' ET':' · ganze Session'} · Cutoff serverseitig erzwungen · ${bars.length} Kerzen</div>`;
+ show('msg',(r.warnings&&r.warnings.length?('Hinweise:\n- '+r.warnings.join('\n- ')):`${bars.length} Kerzen geladen.`),r.warnings&&r.warnings.length?'warn':'msg')}
+ catch(e){show('err',e.message,'error');show('msg','')}}
+
+async function checkM5(){try{show('err','');const r=await api('/availability/m5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:v('ticker'),entry_date:v('date')})});show('msg',`${r.available?'OK':'FEHLT'} ${r.symbol} ${r.date}: ${r.message} (${r.bars} Bars)`)}catch(e){show('err',e.message,'error')}}
+
+async function saveLabel(){try{show('err','');const cutoff=v('cutoff');const body={ticker:v('ticker'),entry_date:v('date'),label_class:v('label_class'),structure:v('structure'),trigger:v('trigger'),tactic:v('tactic'),level_name:v('level_name'),orderly_rating:+v('orderly_rating'),result_r:v('result_r')?+v('result_r'):null,result_is_hypothetical:$('result_is_hypothetical').checked,mfe_r:v('mfe_r')?+v('mfe_r'):null,mae_r:v('mae_r')?+v('mae_r'):null,entry_price:v('entry_price')?+v('entry_price'):null,stop_price:v('stop_price')?+v('stop_price'):null,pivot_level_price:v('pivot_level_price')?+v('pivot_level_price'):null,notes:v('notes'),cutoff_timestamp:cutoff?`${v('date')} ${cutoff} ET`:null,was_playback_enforced:!!cutoff};
+ const r=await api('/labels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});currentSetupId=r.id;show('msg','Gespeichert: '+r.setup_name+' (id '+r.id+')');loadLabels()}catch(e){show('err',e.message,'error')}}
+
+async function setMarker(type){if(selected<0||!bars.length){show('err','Erst Kerze waehlen.','error');return}if(!currentSetupId){show('err','Erst Label speichern, dann Marker setzen.','error');return}
+ try{const b=bars[selected];await api('/markers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({setup_id:currentSetupId,marker_type:type,timestamp:b.time,price:b.close,timeframe:v('tf')})});show('msg',`${type}-Marker gesetzt: ${b.time} @ ${b.close}`)}catch(e){show('err',e.message,'error')}}
+
+async function importCsv(){const f=$('csv').files[0];if(!f){show('err','Keine Datei gewaehlt.','error');return}const fd=new FormData();fd.append('file',f);try{const r=await fetch(API+'/api/imports/csv',{method:'POST',body:fd});const j=await r.json();show('msg',`Importiert: ${j.imported}; Fehler: ${j.errors.length}`);show('err',j.errors.map(e=>`Zeile ${e.row}: ${e.message}`).join('\n'),'error');loadLabels()}catch(e){show('err',e.message,'error')}}
+
+async function backup(){try{const r=await api('/backups',{method:'POST'});show('msg','Backup erstellt: '+r.backup)}catch(e){show('err',e.message,'error')}}
+async function listBackups(){try{const r=await api('/backups');$('backups').innerHTML=r.backups.length?r.backups.map(b=>`<button onclick="restore('${b}')">↺ ${b}</button>`).join(''):'<span class="hint">keine Backups</span>'}catch(e){show('err',e.message,'error')}}
+async function restore(name){if(!confirm('Backup zurueckspielen? Der aktuelle Stand wird vorher gesichert.'))return;try{const r=await api('/backups/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:name})});show('msg','Zurueckgespielt aus '+r.restored_from+'; Sicherung: '+r.safety_backup);loadLabels()}catch(e){show('err',e.message,'error')}}
+
+async function loadLabels(){try{const l=await api('/labels');$('labels').innerHTML=l.map(x=>`<tr><td>${x.ticker}</td><td>${x.entry_date||''}</td><td>${x.setup_name}</td><td>${x.label_class}</td><td>${x.result_r??''}</td></tr>`).join('')}catch{}}
+
+document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;
+ if(e.key==='ArrowLeft'){selected=Math.max(0,selected-1);draw()}
+ else if(e.key==='ArrowRight'){selected=Math.min(bars.length-1,selected+1);draw()}
+ else if(e.key.toLowerCase()==='e')setMarker('entry');else if(e.key.toLowerCase()==='x')setMarker('exit');
+ else if(e.key.toLowerCase()==='s')setMarker('stop');else if(e.key.toLowerCase()==='p')setMarker('pivot')});
+
+buildForm();loadLabels();
+</script></body></html>
