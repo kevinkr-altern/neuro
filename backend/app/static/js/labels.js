@@ -111,6 +111,35 @@ SM.fillMetricsTable = function () {
 SM.loadLabels = async function () {
   try {
     const l = await SM.api('/labels');
-    SM.$('labels').innerHTML = l.map((x) => `<tr><td>${x.ticker}</td><td>${x.entry_date || ''}</td><td>${x.setup_name}</td><td>${x.label_class}</td><td>${x.result_r ?? ''}</td></tr>`).join('');
+    SM.$('labels').innerHTML = l.map((x) => `<tr><td>${x.ticker}</td><td>${x.entry_date || ''}</td><td>${x.setup_name}</td><td>${x.label_class}</td><td>${x.result_r ?? ''}</td><td><button class="btn-danger" title="Label loeschen" onclick="SM.deleteLabel(${x.id})">✕</button></td></tr>`).join('');
   } catch { /* Liste bleibt leer, kein harter Fehler */ }
+};
+
+SM.deleteLabel = async function (id) {
+  if (!confirm('Dieses Label wirklich unwiderruflich loeschen?')) return;
+  try {
+    await SM.api(`/labels/${id}`, { method: 'DELETE' });
+    if (SM.currentSetupId === id) SM.currentSetupId = null;
+    SM.setMsg('Label geloescht.');
+    SM.loadLabels();
+  } catch (e) { SM.showErr(e.message); }
+};
+
+// Verwirft den aktuell im Formular stehenden, noch NICHT gespeicherten
+// Label-Entwurf (Datum/Cutoff/Kennzahlen aus "Setup hier markieren") - loescht
+// KEIN bereits gespeichertes Label, das macht SM.deleteLabel().
+SM.cancelLabel = function () {
+  SM.currentSetupId = null;
+  SM.lastEntryDate = null;
+  SM.lastCutoff = null;
+  SM.metrics = {};
+  document.querySelectorAll('#form select').forEach((s) => { s.selectedIndex = 0; });
+  ['result_r', 'mfe_r', 'mae_r', 'entry_price', 'stop_price', 'target_price', 'pivot_level_price'].forEach((id) => {
+    if (SM.$(id)) SM.$(id).value = '';
+  });
+  if (SM.$('result_is_hypothetical')) SM.$('result_is_hypothetical').checked = false;
+  if (SM.$('notes')) SM.$('notes').value = '';
+  SM.nameIt();
+  SM.clearPosition();
+  SM.setMsg('Label-Entwurf verworfen.');
 };

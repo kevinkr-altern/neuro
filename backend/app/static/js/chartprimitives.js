@@ -57,6 +57,52 @@ SM.RectPrimitive.prototype.paneViews = function () {
   }];
 };
 
+// Duenner, pixelhoher Streifen am oberen Rand der Pane, aus mehreren farbigen
+// Zeit-Segmenten in EINEM Primitive (statt vieler Einzel-Primitives - fuer den
+// QQQ-Marktzustand-Strich, der pro Kerze eine eigene Farbe haben kann).
+SM.TopStripPrimitive = function (opts) {
+  this._opts = Object.assign({ heightPx: 4 }, opts);
+  this._segments = [];
+  this._chart = null; this._requestUpdate = null;
+};
+SM.TopStripPrimitive.prototype.attached = function (param) {
+  this._chart = param.chart; this._requestUpdate = param.requestUpdate;
+};
+SM.TopStripPrimitive.prototype.detached = function () { this._chart = null; };
+SM.TopStripPrimitive.prototype.updateAllViews = function () {};
+SM.TopStripPrimitive.prototype.setSegments = function (segments) {
+  this._segments = segments || [];
+  if (this._requestUpdate) this._requestUpdate();
+};
+SM.TopStripPrimitive.prototype.paneViews = function () {
+  var self = this;
+  return [{
+    zOrder: function () { return 'top'; },
+    renderer: function () {
+      return {
+        draw: function (target) {
+          if (!self._chart || !self._segments.length) return;
+          var ts = self._chart.timeScale();
+          target.useBitmapCoordinateSpace(function (scope) {
+            var ctx = scope.context;
+            var h = Math.max(1, Math.round(self._opts.heightPx * scope.verticalPixelRatio));
+            for (var i = 0; i < self._segments.length; i++) {
+              var seg = self._segments[i];
+              var x1 = ts.timeToCoordinate(seg.timeFrom);
+              var x2 = ts.timeToCoordinate(seg.timeTo);
+              if (x1 == null || x2 == null) continue;
+              var rx1 = Math.round(x1 * scope.horizontalPixelRatio), rx2 = Math.round(x2 * scope.horizontalPixelRatio);
+              var left = Math.min(rx1, rx2), width = Math.max(1, Math.abs(rx2 - rx1));
+              ctx.fillStyle = seg.color;
+              ctx.fillRect(left, 0, width, h);
+            }
+          });
+        },
+      };
+    },
+  }];
+};
+
 // Nur zeitbegrenztes Band ueber die volle Pane-Hoehe (fuer ORB-Fenster).
 SM.VerticalBandPrimitive = function (opts) {
   this._opts = Object.assign({ fillColor: 'rgba(255,255,255,0.05)' }, opts);

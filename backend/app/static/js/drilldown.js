@@ -22,6 +22,7 @@ SM.drilldownDay = async function (ticker, dateIso) {
     SM._replayRedraw();
     SM.updateReplayPosLabel();
     SM.renderOrbBands();
+    SM.refreshMarketStateStrip();
     SM.$('btnBackToDaily').classList.remove('hidden');
     document.querySelectorAll('#tfGroup [data-tf]').forEach((b) => b.classList.toggle('active', b.dataset.tf === '5m'));
     SM.setMsg(`Intraday-Drilldown ${date}: ${r.bars.length} M5-Kerzen, ORB-Baender M5/M15/M30 sichtbar.`);
@@ -46,6 +47,7 @@ SM.returnToDaily = async function () {
     SM.replay.positionTime = r.bars[idx] ? r.bars[idx].time : null;
     SM._replayRedraw();
     SM.updateReplayPosLabel();
+    SM.refreshMarketStateStrip();
     SM.setMsg(`Zurueck zum Tages-Chart (${r.bars.length} Kerzen).`);
   } catch (e) { SM.showErr(e.message); }
 };

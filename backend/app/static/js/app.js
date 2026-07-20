@@ -42,6 +42,7 @@ SM.loadTicker = async function (timeframe) {
     let msg = `${r.bars.length} Kerzen geladen (${timeframe}), Bereich ${r.actual_from} bis ${r.actual_to}.`;
     if (r.warnings && r.warnings.length) msg += '\nHinweise:\n- ' + r.warnings.join('\n- ');
     SM.setMsg(msg, r.warnings && r.warnings.length ? 'warn' : 'msg');
+    SM.refreshMarketStateStrip();
   } catch (e) { SM.showErr(e.message); SM.setMsg(''); }
 };
 
@@ -77,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   SM.$('replayPlay').addEventListener('click', () => { SM.replay.playing ? SM.replayPause() : SM.replayPlay(); });
+  SM.$('replayStepBack').addEventListener('click', SM.replayStepBack);
   SM.$('replayStep').addEventListener('click', SM.replayStep);
   SM.$('replaySpeed').addEventListener('change', (e) => {
     SM.replay.speedMs = +e.target.value;
@@ -84,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   SM.$('btnMarkSetup').addEventListener('click', SM.markSetupHere);
   SM.$('btnSaveLabel').addEventListener('click', SM.saveLabel);
+  SM.$('btnCancelLabel').addEventListener('click', SM.cancelLabel);
 
   document.querySelectorAll('[data-marker]').forEach((btn) => {
     btn.addEventListener('click', () => SM.armMarker(btn.dataset.marker));

@@ -30,6 +30,12 @@ main.layout{display:grid;grid-template-columns:1fr 320px;gap:14px;padding:14px 1
 .pos-overlay-label.pos-target{border-color:#55d98d;color:#8ef0b0}
 .pos-overlay-label.pos-stop{border-color:#ff6b6b;color:#ff8b8b}
 .pos-overlay-label.pos-tooltip{transform:translate(6px,-120%);border-color:#4dabf7;color:#a9d3ff}
+.pos-overlay-label.pos-orb-results{transform:translate(0,-100%);border-color:#ffd166;color:#ffe4a3;line-height:1.5;text-align:left}
+
+.btn-danger{background:#4a1f1f;border-color:#7a2e2e;color:#ff9a9a;padding:3px 8px;font-size:12px}
+.btn-danger:hover{background:#672a2a}
+.btn-secondary{background:transparent;border-color:#3b506b}
+.btn-secondary:hover{background:#1a2536}
 
 .topbar-right{position:relative}
 .settings-panel{position:absolute;top:calc(100% + 6px);right:0;background:var(--panel);border:1px solid var(--border);

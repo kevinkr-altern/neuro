@@ -3,7 +3,11 @@
 // geladenen M5-Kerzen berechnet - kein Backend-Aufruf.
 var SM = window.SM = window.SM || {};
 
-SM.orbState = { bands: [] };
+// windows: die zuletzt berechneten M5/M15/M30-Opening-Range-Grenzen (Preise).
+// dayBars: die M5-Kerzen des Drilldown-Tages, fuer die ORB-Durchbruch-Suche im
+// Positions-Werkzeug (positiontool.js) - ein ORB-Durchbruch bezieht sich per
+// Konvention immer auf dieselbe Session wie die Opening Range selbst.
+SM.orbState = { bands: [], windows: null, dayBars: [] };
 
 SM.minsSinceOpen = function (isoTime) {
   const h = parseInt(isoTime.slice(11, 13), 10);
@@ -29,6 +33,8 @@ SM.renderOrbBands = function () {
   SM.clearOrbBands();
   const cs = SM.chartState;
   const windows = SM.computeOrbWindows(cs.bars);
+  SM.orbState.windows = windows;
+  SM.orbState.dayBars = cs.bars.slice();
   const specs = [
     { key: 'm30', color: 'rgba(77,171,247,0.06)', lineColor: '#4dabf7', label: 'ORB M30' },
     { key: 'm15', color: 'rgba(6,214,160,0.08)', lineColor: '#06d6a0', label: 'ORB M15' },
@@ -52,5 +58,7 @@ SM.clearOrbBands = function () {
   const cs = SM.chartState;
   SM.orbState.bands.forEach((b) => cs.candleSeries.detachPrimitive(b));
   SM.orbState.bands = [];
+  SM.orbState.windows = null;
+  SM.orbState.dayBars = [];
   SM.setReferenceLineGroup('orb', []);
 };

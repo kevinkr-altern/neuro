@@ -315,6 +315,27 @@ def intraday_bars_range(ticker: str, date_from: str, date_to: str, timeframe: st
         return rows
     return aggregate_bars(rows, _TIMEFRAME_MINUTES[timeframe])
 
+def _intraday_range_all_sessions(sid: int, date_from: str, date_to: str):
+    """Wie _regular_intraday_range(), aber OHNE die is_regular_session=1-Einschraenkung -
+    liefert auch Vor-/Nachbörse-Kerzen (mit is_regular_session-Flag im Ergebnis),
+    damit das Frontend sie farblich hinterlegen kann. Nur fuer die native 5m-
+    Breitband-Ansicht gedacht - 15m/30m/1h aggregieren weiterhin nur die reguläre
+    Session (siehe intraday_bars_range/aggregate_bars, strikt an 09:30 ET
+    verankert). Rein visuell, fliesst NIE in compute_metrics()/Look-ahead-
+    Berechnungen ein (die bleiben ausschliesslich bei _regular_intraday())."""
+    with conn() as c:
+        rows = [dict(r) for r in c.execute(
+            "select timestamp_et as time, open, high, low, close, volume, is_regular_session from price_bars_intraday "
+            "where symbol_id=? and interval='5m' "
+            "and substr(timestamp_utc,1,10) between ? and ? "
+            "order by timestamp_utc", (sid, date_from, date_to))]
+    rows = _drop_broken_ohlc(rows)
+    return adjust_bars(rows, _load_splits(sid))
+
+def intraday_bars_range_all_sessions(ticker: str, date_from: str, date_to: str):
+    sid = symbol_id(ticker)
+    return _intraday_range_all_sessions(sid, date_from, date_to)
+
 def daily_bars_range(ticker: str, date_from: str, date_to: str):
     sid = symbol_id(ticker)
     with conn() as c:
