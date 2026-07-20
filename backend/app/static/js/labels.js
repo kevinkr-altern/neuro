@@ -93,6 +93,37 @@ SM._signCls = function (v) { return v == null ? 'dim' : (v >= 0 ? 'good' : 'bad'
 SM._fmt = function (v, suffix) { return v == null ? '—' : (v + (suffix || '')); };
 SM._fmtPrice = function (v) { return v == null ? '—' : v.toFixed(2); };
 
+// Alle Kennzahlen-Karten sind einklappbar; der Klapp-Zustand bleibt ueber
+// wiederholte fillMetricsTable()-Aufrufe hinweg erhalten (die bei jeder
+// Replay-Aktualisierung das gesamte innerHTML neu bauen), weil er hier
+// separat vom Kennzahlen-Inhalt gehalten wird.
+SM.metricCardCollapsed = {};
+
+SM._card = function (id, title, bodyHtml, badgeHtml) {
+  const collapsed = !!SM.metricCardCollapsed[id];
+  return `<div class="metric-card${collapsed ? ' collapsed' : ''}" data-card="${id}">
+    <h4 onclick="SM.toggleMetricCard('${id}')"><span>${title}</span>${collapsed && badgeHtml ? badgeHtml : ''}<span class="card-caret">${collapsed ? '▸' : '▾'}</span></h4>
+    <div class="metric-card-body">${bodyHtml}</div>
+  </div>`;
+};
+
+SM.toggleMetricCard = function (id) {
+  SM.metricCardCollapsed[id] = !SM.metricCardCollapsed[id];
+  SM.fillMetricsTable();
+};
+
+SM._minerviniBadge = function (score) {
+  const cls = score < 6 ? 'bad' : (score === 8 ? 'good' : 'warn2');
+  return `<span class="card-badge ${cls}">${score}/8</span>`;
+};
+
+SM._minerviniBody = function () {
+  const r = SM.minerviniResult;
+  if (!r) return '<p class="metrics-empty">Nicht genug Tageshistorie fuer die Berechnung.</p>';
+  const rows = r.checks.map((c) => SM._mrow(c.label, c.ok ? 'erfuellt' : 'nicht erfuellt', c.ok ? 'good' : 'bad')).join('');
+  return rows + `<p class="hint" style="margin:6px 2px 0">Score: ${r.score}/8. Kriterium 8 ist eine Naeherung (Performance vs. QQQ) - kein echtes IBD-RS-Rating, das eine marktweite Datenbank erfordert.</p>`;
+};
+
 SM.fillMetricsTable = function () {
   const m = SM.metrics || {};
   const target = SM.$('metrics');
@@ -103,15 +134,16 @@ SM.fillMetricsTable = function () {
   }
   const orbRow = (tf) => m[`orb_${tf}_valid`] ? `${SM._fmtPrice(m[`orb_${tf}_high`])} / ${SM._fmtPrice(m[`orb_${tf}_low`])}` : 'noch nicht gueltig';
   const cards = [
-    `<div class="metric-card"><h4>Preis</h4>
+    SM._card('preis', 'Preis', `
       ${SM._mrow('Preis (Cutoff)', SM._fmtPrice(m.selected_price))}
       ${SM._mrow('Session-Open', SM._fmtPrice(m.session_open))}
       ${SM._mrow('Gap %', SM._fmt(m.gap_pct, '%'), SM._signCls(m.gap_pct))}
       ${SM._mrow('PDH', SM._fmtPrice(m.pdh))}
       ${SM._mrow('PDL', SM._fmtPrice(m.pdl))}
       ${SM._mrow('Low of Day bisher', SM._fmtPrice(m.low_of_day_so_far))}
-    </div>`,
-    `<div class="metric-card"><h4>Volatilitaet</h4>
+    `),
+    SM._card('minervini', 'Minervini-Kriterien', SM._minerviniBody(), SM.minerviniResult ? SM._minerviniBadge(SM.minerviniResult.score) : ''),
+    SM._card('volatilitaet', 'Volatilitaet', `
       ${SM._mrow('ATR(14) $', SM._fmtPrice(m.atr14_dollars))}
       ${SM._mrow('LoD-Distance %', SM._fmt(m.lod_distance_pct, '%'), m.lod_rule_70_ok == null ? 'dim' : (m.lod_rule_70_ok ? 'good' : 'bad'))}
       ${SM._mrow('LoD ≤70%-Regel', m.lod_rule_70_ok == null ? '—' : (m.lod_rule_70_ok ? 'erfuellt' : 'verletzt'), m.lod_rule_70_ok == null ? 'dim' : (m.lod_rule_70_ok ? 'good' : 'bad'))}
@@ -121,26 +153,26 @@ SM.fillMetricsTable = function () {
       ${SM._mrow('ADR% 14T', SM._fmt(m.adr14_pct, '%'))}
       ${SM._mrow('ADR% 20T', SM._fmt(m.adr20_pct, '%'))}
       ${SM._mrow('Vol-Compression-Proxy 15T', SM._fmt(m.volatility_compression_proxy_15))}
-    </div>`,
-    `<div class="metric-card"><h4>Volumen</h4>
+    `),
+    SM._card('volumen', 'Volumen', `
       ${SM._mrow('RVOL', m.rvol_projected != null ? m.rvol_projected : '—')}
       ${SM._mrow('Methode', m.rvol_note || '—', 'dim')}
-    </div>`,
-    `<div class="metric-card"><h4>Abstand zu Moving Averages</h4>
+    `),
+    SM._card('ma', 'Abstand zu Moving Averages', `
       ${SM._mrow('EMA10 %', SM._fmt(m.dist_ema10_pct, '%'), SM._signCls(m.dist_ema10_pct))}
       ${SM._mrow('EMA20 %', SM._fmt(m.dist_ema20_pct, '%'), SM._signCls(m.dist_ema20_pct))}
       ${SM._mrow('SMA50 %', SM._fmt(m.dist_sma50_pct, '%'), SM._signCls(m.dist_sma50_pct))}
       ${SM._mrow('SMA100 %', SM._fmt(m.dist_sma100_pct, '%'), SM._signCls(m.dist_sma100_pct))}
       ${SM._mrow('SMA200 %', SM._fmt(m.dist_sma200_pct, '%'), SM._signCls(m.dist_sma200_pct))}
-    </div>`,
-    `<div class="metric-card"><h4>Opening Range</h4>
+    `),
+    SM._card('orb', 'Opening Range', `
       ${SM._mrow('ORB M5 H/L', orbRow('m5'), m.orb_m5_valid ? '' : 'dim')}
       ${SM._mrow('ORB M15 H/L', orbRow('m15'), m.orb_m15_valid ? '' : 'dim')}
       ${SM._mrow('ORB M30 H/L', orbRow('m30'), m.orb_m30_valid ? '' : 'dim')}
-    </div>`,
-    `<div class="metric-card"><h4>Status</h4>
+    `),
+    SM._card('status', 'Status', `
       ${SM._mrow('Datenstatus', m.data_status || '—', (m.flags && m.flags.length) ? 'bad' : 'good')}
-    </div>`,
+    `),
   ];
   target.innerHTML = cards.join('');
   SM.setReferenceLines([

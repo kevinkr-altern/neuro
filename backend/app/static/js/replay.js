@@ -128,11 +128,13 @@ SM._refreshMetricsFromReplayPosition = async function () {
   if (!SM.replay.positionTime) return;
   const { date, cutoff } = SM.deriveCutoffFromReplay();
   if (!date) return;
+  const ticker = SM.$('ticker').value.trim().toUpperCase();
   try {
-    const r = await SM.getChartCutoff(SM.$('ticker').value, date, '5m', cutoff);
+    const r = await SM.getChartCutoff(ticker, date, '5m', cutoff);
     SM.metrics = r.metrics || {};
-    SM.fillMetricsTable();
   } catch (e) { /* stiller Fehlschlag - Kennzahlen bleiben auf dem letzten gueltigen Stand */ }
+  await SM.updateMinervini(ticker, date);
+  SM.fillMetricsTable();
 };
 
 SM.updateReplayPosLabel = function () {

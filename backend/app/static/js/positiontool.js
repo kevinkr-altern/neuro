@@ -222,6 +222,7 @@ SM.initPositionTool = function () {
   const container = SM.$('chartContainer');
 
   container.addEventListener('mousedown', (e) => {
+    if (SM.drawingArmed) return; // Zeichen-Werkzeug hat Vorrang am selben Container
     const { x, y } = SM._posXY(e);
     if (SM.position) {
       const hit = SM._posHandleHit(x, y);
