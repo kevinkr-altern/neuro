@@ -96,8 +96,14 @@ document.addEventListener('DOMContentLoaded', () => {
   SM.initPositionTool();
   SM.$('btnPositionTool').addEventListener('click', SM.armPositionTool);
   SM.$('btnClearPosition').addEventListener('click', SM.clearPosition);
+  SM.initMiniChart();
+
+  SM.initDrawingTool();
+  SM.$('btnDrawLine').addEventListener('click', SM.armDrawingTool);
+  SM.$('btnClearDrawings').addEventListener('click', SM.clearDrawings);
 
   chart.subscribeClick((param) => {
+    if (SM.drawingArmed) return; // wird ueber rohes mousedown behandelt (siehe drawings.js)
     if (!param.time) return;
     const bars = SM.chartState.bars;
     const idx = bars.findIndex((b) => SM.toUnixTime(b.time) === param.time);
@@ -124,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+    if (e.key === 'Escape') { SM.cancelPendingDrawing(); return; }
     // Schnelle Replay-Navigation per Pfeiltasten/Leertaste (nur bei aktivem Replay).
     if (SM.replay.active && SM.replay.revealIndex >= 0) {
       if (e.key === 'ArrowRight') { e.preventDefault(); SM.replayStep(); return; }

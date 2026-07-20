@@ -88,6 +88,16 @@ main.layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px 1
 .kbd-hint{color:var(--muted-2);font-size:11px}
 .kbd-hint kbd{background:var(--panel-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10.5px;font-family:inherit}
 
+.mini-chart-panel{margin-top:10px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:8px 10px;box-shadow:var(--shadow)}
+.mini-chart-panel.hidden{display:none}
+.mini-chart-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.mini-chart-header b{color:var(--text)}
+.mini-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mini-chart-container{width:100%;height:30vh;min-height:220px;background:#080a0e;border:1px solid var(--border);
+  border-radius:var(--radius-sm);margin-top:8px;position:relative}
+.mini-chart-panel.collapsed .mini-chart-container{display:none}
+
 .sidebar{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px;
   align-self:start;box-shadow:var(--shadow);max-height:calc(100vh - 90px);overflow-y:auto}
 .tabs{display:flex;gap:6px;margin-bottom:10px;position:sticky;top:0;background:var(--panel);padding-bottom:4px;z-index:2}
@@ -98,7 +108,16 @@ main.layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px 1
 /* --- Kennzahlen als Karten statt einer langen flachen Tabelle --- */
 .metrics-grid{display:flex;flex-direction:column;gap:10px}
 .metric-card{background:var(--panel-2);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:8px 10px}
-.metric-card h4{margin:0 0 6px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted-2);font-weight:700}
+.metric-card h4{margin:0 0 6px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted-2);font-weight:700;
+  cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none}
+.metric-card h4 span:first-child{flex:1}
+.metric-card.collapsed h4{margin-bottom:0}
+.metric-card.collapsed .metric-card-body{display:none}
+.card-caret{color:var(--muted-2);font-size:10px}
+.card-badge{font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px;letter-spacing:0}
+.card-badge.good{background:rgba(85,217,141,.15);color:var(--up)}
+.card-badge.bad{background:rgba(255,107,107,.15);color:var(--down)}
+.card-badge.warn2{background:rgba(255,209,102,.15);color:#ffd166}
 .metric-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12.5px;font-variant-numeric:tabular-nums}
 .metric-row .k{color:var(--muted)}
 .metric-row .v{color:var(--text);font-weight:600;text-align:right}
@@ -120,6 +139,7 @@ input,select,textarea,button{margin:4px 2px;padding:7px 10px;border-radius:var(-
   background:var(--panel-2);color:var(--text);font-family:inherit;font-size:13px;transition:background .12s,border-color .12s}
 button{cursor:pointer;background:var(--accent);border-color:var(--accent);font-weight:500}
 button:hover{background:var(--accent-hi);border-color:var(--accent-hi)}
+button.active{box-shadow:0 0 0 2px rgba(91,155,255,.45) inset}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 label{display:inline-block;margin-right:8px;font-size:13px;color:var(--muted)}
 a{color:var(--accent-hi);margin:0 10px}

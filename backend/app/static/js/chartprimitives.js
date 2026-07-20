@@ -103,6 +103,49 @@ SM.TopStripPrimitive.prototype.paneViews = function () {
   }];
 };
 
+// Freie Linie zwischen zwei (Zeit,Preis)-Punkten (fuer das Zeichen-Werkzeug -
+// Trendlinien u.ae., unabhaengig vom Kerzenraster).
+SM.LineSegmentPrimitive = function (opts) {
+  this._opts = Object.assign({ color: '#5b9bff', width: 2 }, opts);
+  this._chart = null; this._series = null; this._requestUpdate = null;
+};
+SM.LineSegmentPrimitive.prototype.attached = function (param) {
+  this._chart = param.chart; this._series = param.series; this._requestUpdate = param.requestUpdate;
+};
+SM.LineSegmentPrimitive.prototype.detached = function () { this._chart = null; this._series = null; };
+SM.LineSegmentPrimitive.prototype.updateAllViews = function () {};
+SM.LineSegmentPrimitive.prototype.setPoints = function (t1, p1, t2, p2) {
+  this._opts.t1 = t1; this._opts.p1 = p1; this._opts.t2 = t2; this._opts.p2 = p2;
+  if (this._requestUpdate) this._requestUpdate();
+};
+SM.LineSegmentPrimitive.prototype.paneViews = function () {
+  var self = this;
+  return [{
+    zOrder: function () { return 'top'; },
+    renderer: function () {
+      return {
+        draw: function (target) {
+          var o = self._opts;
+          if (!self._chart || !self._series || o.t1 == null || o.t2 == null || o.p1 == null || o.p2 == null) return;
+          var ts = self._chart.timeScale();
+          var x1 = ts.timeToCoordinate(o.t1), x2 = ts.timeToCoordinate(o.t2);
+          var y1 = self._series.priceToCoordinate(o.p1), y2 = self._series.priceToCoordinate(o.p2);
+          if (x1 == null || x2 == null || y1 == null || y2 == null) return;
+          target.useBitmapCoordinateSpace(function (scope) {
+            var ctx = scope.context;
+            ctx.strokeStyle = o.color;
+            ctx.lineWidth = (o.width || 2) * scope.horizontalPixelRatio;
+            ctx.beginPath();
+            ctx.moveTo(x1 * scope.horizontalPixelRatio, y1 * scope.verticalPixelRatio);
+            ctx.lineTo(x2 * scope.horizontalPixelRatio, y2 * scope.verticalPixelRatio);
+            ctx.stroke();
+          });
+        },
+      };
+    },
+  }];
+};
+
 // Nur zeitbegrenztes Band ueber die volle Pane-Hoehe (fuer ORB-Fenster).
 SM.VerticalBandPrimitive = function (opts) {
   this._opts = Object.assign({ fillColor: 'rgba(255,255,255,0.05)' }, opts);

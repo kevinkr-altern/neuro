@@ -17,6 +17,8 @@
     <span id="m5Badge" class="badge">M5 ab: —</span>
   </div>
   <div class="topbar-right">
+    <button id="btnDrawLine" title="Freie Linie zeichnen: Start- und Endpunkt anklicken, ESC bricht ab">／ Linie</button>
+    <button id="btnClearDrawings" class="btn-secondary" title="Alle Zeichnungen entfernen">✕ Linien</button>
     <button id="btnReplayToggle">Replay aktivieren</button>
     <button id="btnSettings" title="Chart-Stil aendern">⚙</button>
     <div id="settingsPanel" class="settings-panel hidden"></div>
@@ -59,10 +61,27 @@
         <button id="btnClearPosition" class="btn-secondary" title="Positions-Werkzeug entfernen">✕ Position</button>
         <button id="btnMarkSetup">Setup hier markieren</button>
         <button id="btnBackToDaily" class="hidden btn-secondary" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
+        <button id="btnOpenMiniChart" class="btn-secondary" title="Minuten-Chart fuer den aktuell pausierten Tag oeffnen (D1, Replay pausiert)">▤ Minuten-Chart</button>
         <span class="kbd-hint">Navigation: <kbd>←</kbd> <kbd>→</kbd> Schritt, <kbd>Leertaste</kbd> Play/Pause, Scrubber = schnell springen</span>
       </div>
     </div>
-    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20).</p>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken+ziehen im Chart setzt Entry/Stop/Ziel; Griffe am rechten Rand ziehen, um Stop/Ziel/Exit-Zeitpunkt anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20). "／ Linie" zeichnet eine freie Trendlinie (Start-/Endpunkt anklicken, ESC bricht ab). "▤ Minuten-Chart" oeffnet bei pausiertem D1-Replay einen zweiten, einklappbaren Chart mit den 5-Minuten-Kerzen dieses Tages (feinste verfuegbare Aufloesung - EODHD liefert kein echtes 1-Minuten-Intervall); ist der Tag dort durchgelaufen, springt der grosse Tages-Chart automatisch einen Tag weiter und der Minuten-Chart startet neu.</p>
+
+    <div id="miniChartPanel" class="mini-chart-panel hidden">
+      <div class="mini-chart-header">
+        <span>Minuten-Chart (5m): <b id="miniChartDate">–</b></span>
+        <div class="mini-controls">
+          <button id="miniStepBack" class="icon-btn" title="Schritt zurueck">⏮</button>
+          <button id="miniPlay" class="icon-btn primary" title="Play/Pause">▶</button>
+          <button id="miniStep" class="icon-btn" title="Schritt vorwaerts">⏭</button>
+          <input id="miniScrub" class="replay-scrub" type="range" min="0" max="0" value="0" title="Schnell springen">
+          <span id="miniCount" class="replay-count"></span>
+          <button id="btnMiniCollapse" class="btn-secondary" title="Einklappen/Ausklappen">▾</button>
+          <button id="btnMiniClose" class="btn-secondary" title="Minuten-Chart schliessen">✕</button>
+        </div>
+      </div>
+      <div id="miniChartContainer" class="mini-chart-container"></div>
+    </div>
   </section>
 
   <aside class="sidebar">
@@ -115,6 +134,7 @@
 <script src="/static/js/api.js"></script>
 <script src="/static/js/chart.js"></script>
 <script src="/static/js/chartprimitives.js"></script>
+<script src="/static/js/drawings.js"></script>
 <script src="/static/js/orb.js"></script>
 <script src="/static/js/positiontool.js"></script>
 <script src="/static/js/replay.js"></script>
@@ -122,7 +142,9 @@
 <script src="/static/js/labels.js"></script>
 <script src="/static/js/importexport.js"></script>
 <script src="/static/js/drilldown.js"></script>
+<script src="/static/js/minichart.js"></script>
 <script src="/static/js/marketstate.js"></script>
+<script src="/static/js/minervini.js"></script>
 <script src="/static/js/settingspanel.js"></script>
 <script src="/static/js/app.js"></script>
 </body></html>
