@@ -34,9 +34,9 @@ async def fetch_intraday(symbol: str, interval: str, from_ts: int, to_ts: int):
     data = await _get(f"{BASE}/intraday/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'interval': interval, 'from': from_ts, 'to': to_ts})
     return data if isinstance(data, list) else []
 
-async def fetch_eod(symbol: str, date_from: str, date_to: str):
-    """Unadjustierte Daily-OHLC plus separater adjusted_close."""
-    data = await _get(f"{BASE}/eod/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'from': date_from, 'to': date_to, 'period': 'd'})
+async def fetch_eod(symbol: str, date_from: str, date_to: str, period: str = 'd'):
+    """Unadjustierte OHLC plus separater adjusted_close. period='d' (Daily) oder 'w' (nativ Weekly, von EODHD serverseitig aggregiert)."""
+    data = await _get(f"{BASE}/eod/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'from': date_from, 'to': date_to, 'period': period})
     return data if isinstance(data, list) else []
 
 async def check_m5(symbol: str, date: str):

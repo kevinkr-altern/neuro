@@ -3,11 +3,15 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 import csv, io, json, shutil, time, sqlite3, re
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.config import settings
 from app.core.db import conn, symbol_id
 from app.providers.eodhd import check_m5, EodhdError
-from app.services.market_data import ensure_m5, ensure_daily, intraday_bars, compute_metrics
+from app.services.market_data import (
+    ensure_m5, ensure_daily_history, ensure_weekly_history, ensure_m5_history, ensure_m5_earliest,
+    intraday_bars, intraday_bars_range, daily_bars_range, weekly_bars_range, indicator_series,
+    compute_metrics, DAILY_HISTORY_FLOOR,
+)
 
 router = APIRouter()
 
@@ -73,7 +77,7 @@ async def _load_chart(ticker, date, timeframe, cutoff):
     except EodhdError as e:
         raise HTTPException(400, str(e))
     try:
-        await ensure_daily(ticker, date)
+        await ensure_daily_history(ticker, date)
     except EodhdError as e:
         warnings.append(f'Daily-Daten nicht geladen: {e}')
     bars = intraday_bars(ticker, date, timeframe, cutoff)
@@ -89,6 +93,56 @@ async def chart_post(req: ChartRequest):
 @router.get('/charts/{ticker}/{date}')
 async def chart(ticker: str, date: str, timeframe: str = '5m', cutoff_time: str | None = None):
     return await _load_chart(ticker, date, timeframe, cutoff_time)
+
+# ---------- Breitband-Chart-Daten (Browsing/Replay, NICHT look-ahead-geschuetzt) ----------
+# Rein visuell. Wird niemals fuer Look-ahead-sensible Berechnungen verwendet -
+# dafuer bleiben /api/charts + compute_metrics() (oben) die einzige Quelle.
+
+_CHART_DATA_TIMEFRAMES = {'5m', '15m', '30m', '1h', '1d', '1w'}
+
+@router.get('/chart-data/{ticker}')
+async def chart_data(ticker: str, timeframe: str = '1d', date_from: str | None = None, date_to: str | None = None):
+    if timeframe not in _CHART_DATA_TIMEFRAMES:
+        raise HTTPException(400, f'Unbekannte Zeitebene: {timeframe}. Erlaubt: {sorted(_CHART_DATA_TIMEFRAMES)}')
+    warnings = []
+    today = datetime.now(timezone.utc).date().isoformat()
+    date_to = date_to or today
+    m5_info = None
+    try:
+        if timeframe in ('1d', '1w'):
+            date_from = date_from or DAILY_HISTORY_FLOOR
+            await ensure_daily_history(ticker, date_to, date_from)
+            if timeframe == '1w':
+                await ensure_weekly_history(ticker, date_to, date_from)
+                bars = weekly_bars_range(ticker, date_from, date_to)
+            else:
+                bars = daily_bars_range(ticker, date_from, date_to)
+        else:
+            m5_info = await ensure_m5_earliest(ticker)
+            date_from = date_from or (m5_info['m5_history_start'] or today)
+            await ensure_m5_history(ticker, date_from, date_to)
+            bars = intraday_bars_range(ticker, date_from, date_to, timeframe)
+    except EodhdError as e:
+        raise HTTPException(400, str(e))
+    indicators = indicator_series(bars)
+    if any(b.get('incomplete') for b in bars):
+        warnings.append('Mindestens eine aggregierte Kerze ist unvollstaendig (Datenluecke) und als solche markiert.')
+    return {
+        'symbol': ticker.upper(), 'timeframe': timeframe, 'bars': bars, 'indicators': indicators,
+        'm5_history_start': m5_info['m5_history_start'] if m5_info else None,
+        'm5_history_verified': m5_info['verified'] if m5_info else False,
+        'actual_from': date_from, 'actual_to': date_to, 'warnings': warnings,
+    }
+
+class M5EarliestRequest(BaseModel):
+    ticker: str
+
+@router.post('/availability/m5-earliest')
+async def availability_m5_earliest(req: M5EarliestRequest):
+    try:
+        return await ensure_m5_earliest(req.ticker)
+    except EodhdError as e:
+        raise HTTPException(400, str(e))
 
 # ---------- Labels ----------
 

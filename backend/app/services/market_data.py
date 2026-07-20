@@ -1,15 +1,17 @@
-from datetime import datetime, timezone, date as date_cls
+from datetime import datetime, timezone, timedelta, date as date_cls
+from functools import partial
 from zoneinfo import ZoneInfo
 from app.core.db import conn, symbol_id
 from app.providers.eodhd import fetch_intraday, fetch_eod
-from app.core.market_calendar import is_half_trading_day
+from app.core.market_calendar import is_half_trading_day, PLATFORM_5M_SEARCH_FLOOR
 from app.indicators.formulas import (
     wilder_atr_last, adr_pct_last, lod_distance_pct, atr_extension,
-    sma_last, ema_last, volatility_compression_proxy,
+    sma_last, ema_last, volatility_compression_proxy, sma, ema,
 )
 
 ET = ZoneInfo('America/New_York')
 SESSION_START_MIN = 9 * 60 + 30  # 09:30 ET
+DAILY_HISTORY_FLOOR = '1985-01-01'  # EODHD liefert vor der echten Notierung einfach nichts
 
 def _ts(row):
     v = row.get('timestamp') or row.get('datetime') or row.get('date')
@@ -44,18 +46,163 @@ async def ensure_m5(ticker: str, date: str):
                 c.execute("insert or replace into data_availability(symbol_id,interval,first_available_at,last_available_at,status,message) values(?,?,?,?,?,?)", (sid, '5m', min(_ts(r).isoformat() for r in rows), max(_ts(r).isoformat() for r in rows), 'available', 'Echte m5-Daten gefunden'))
     return sid
 
-async def ensure_daily(ticker: str, date: str):
-    """Laedt Daily-OHLC (unadjustiert) fuer ~2 Jahre bis einschliesslich `date`."""
-    sid = symbol_id(ticker)
-    y = int(date[:4]); date_from = f'{y-2}-01-01'
+def _prev_day(d: str) -> str:
+    return (date_cls.fromisoformat(d) - timedelta(days=1)).isoformat()
+
+def _next_day(d: str) -> str:
+    return (date_cls.fromisoformat(d) + timedelta(days=1)).isoformat()
+
+def coverage_gaps(cached_from: str | None, cached_to: str | None, want_from: str, want_to: str) -> list[tuple[str, str]]:
+    """Reine Funktion: welche (from,to)-Teilbereiche von [want_from,want_to] sind
+    noch NICHT durch [cached_from,cached_to] (bereits gepruefter Bereich, auch
+    wenn EODHD dort leer war) abgedeckt? Liefert 0-2 nicht ueberlappende Teile."""
+    if want_from > want_to:
+        return []
+    if not cached_from or not cached_to:
+        return [(want_from, want_to)]
+    gaps = []
+    if want_from < cached_from:
+        end = min(_prev_day(cached_from), want_to)
+        if want_from <= end:
+            gaps.append((want_from, end))
+    if want_to > cached_to:
+        start = max(_next_day(cached_to), want_from)
+        if start <= want_to:
+            gaps.append((start, want_to))
+    return gaps
+
+def _get_watermark(sid: int, interval: str) -> tuple[str | None, str | None]:
     with conn() as c:
-        existing = c.execute("select count(*) from price_bars_daily where symbol_id=? and date<=? and date>=?", (sid, date, date_from)).fetchone()[0]
-    if existing < 200:
-        rows = await fetch_eod(ticker if '.' in ticker else f'{ticker}.US', date_from, date)
+        row = c.execute("select cached_from, cached_to from data_availability where symbol_id=? and interval=?", (sid, interval)).fetchone()
+        return (row['cached_from'], row['cached_to']) if row else (None, None)
+
+def _extend_watermark(sid: int, interval: str, checked_from: str, checked_to: str, status: str = 'cached', message: str | None = None):
+    with conn() as c:
+        c.execute(
+            "insert into data_availability(symbol_id,interval,cached_from,cached_to,status,message,checked_at) values(?,?,?,?,?,?,current_timestamp) "
+            "on conflict(symbol_id,interval) do update set "
+            "cached_from=min(coalesce(cached_from, excluded.cached_from), excluded.cached_from), "
+            "cached_to=max(coalesce(cached_to, excluded.cached_to), excluded.cached_to), "
+            "status=excluded.status, message=excluded.message, checked_at=current_timestamp",
+            (sid, interval, checked_from, checked_to, status, message))
+
+async def ensure_daily_history(ticker: str, date_to: str, date_from: str = DAILY_HISTORY_FLOOR):
+    """Laedt Daily-OHLC (unadjustiert) fuer den angefragten Bereich, aber nur die
+    tatsaechliche Luecke gegenueber dem bereits geprueften Bereich (Wasserstandsmarke
+    in data_availability, interval='1d') - kein wiederholtes Neuladen bei jedem Aufruf."""
+    sid = symbol_id(ticker)
+    cached_from, cached_to = _get_watermark(sid, '1d')
+    for gfrom, gto in coverage_gaps(cached_from, cached_to, date_from, date_to):
+        rows = await fetch_eod(ticker if '.' in ticker else f'{ticker}.US', gfrom, gto, period='d')
         with conn() as c:
             for r in rows:
                 c.execute("insert or ignore into price_bars_daily values(?,?,?,?,?,?,?,?,?,current_timestamp)", (sid, r['date'], r['open'], r['high'], r['low'], r['close'], r.get('adjusted_close'), r.get('volume'), 'EODHD'))
+        _extend_watermark(sid, '1d', gfrom, gto, 'cached', f'{len(rows)} Daily-Kerzen geprueft/geladen')
     return sid
+
+async def ensure_weekly_history(ticker: str, date_to: str, date_from: str = DAILY_HISTORY_FLOOR):
+    """Native Wochenkerzen von EODHD (period='w'; serverseitig aggregiert,
+    behandelt Teilwochen/Feiertage korrekt - keine eigene Aggregation)."""
+    sid = symbol_id(ticker)
+    cached_from, cached_to = _get_watermark(sid, '1w')
+    for gfrom, gto in coverage_gaps(cached_from, cached_to, date_from, date_to):
+        rows = await fetch_eod(ticker if '.' in ticker else f'{ticker}.US', gfrom, gto, period='w')
+        with conn() as c:
+            for r in rows:
+                c.execute("insert or ignore into price_bars_weekly values(?,?,?,?,?,?,?,?,?,current_timestamp)", (sid, r['date'], r['open'], r['high'], r['low'], r['close'], r.get('adjusted_close'), r.get('volume'), 'EODHD'))
+        _extend_watermark(sid, '1w', gfrom, gto, 'cached', f'{len(rows)} Wochenkerzen geprueft/geladen')
+    return sid
+
+EODHD_5M_MAX_WINDOW_DAYS = 550  # Puffer unter EODHDs dokumentiertem 600-Tage-Limit fuer interval=5m
+
+async def ensure_m5_history(ticker: str, date_from: str, date_to: str):
+    """Deep-Backfill von m5 ueber mehrere Tage/Jahre, in <=550-Tage-Fenstern,
+    gegen die Wasserstandsmarke interval='5m_range' (getrennt von der
+    Einzeltag-Pruefung interval='5m', die von ensure_m5()/checkM5 verwendet wird)."""
+    sid = symbol_id(ticker)
+    cached_from, cached_to = _get_watermark(sid, '5m_range')
+    for gfrom, gto in coverage_gaps(cached_from, cached_to, date_from, date_to):
+        cur = date_cls.fromisoformat(gfrom)
+        end = date_cls.fromisoformat(gto)
+        while cur <= end:
+            chunk_end = min(cur + timedelta(days=EODHD_5M_MAX_WINDOW_DAYS - 1), end)
+            start_ts = int(datetime.combine(cur, datetime.min.time(), tzinfo=timezone.utc).timestamp())
+            end_ts = int(datetime.combine(chunk_end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp()) - 1
+            rows = await fetch_intraday(ticker if '.' in ticker else f'{ticker}.US', '5m', start_ts, end_ts)
+            with conn() as c:
+                for r in rows:
+                    dt = _ts(r); et = dt.astimezone(ET)
+                    t = et.time().isoformat()
+                    regular = int('09:30:00' <= t <= '16:00:00')
+                    vol = r.get('volume')
+                    vol = None if vol in (None, '', 'null') else vol
+                    c.execute("insert or ignore into price_bars_intraday values(?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)", (sid, dt.isoformat(), et.isoformat(), '5m', r['open'], r['high'], r['low'], r['close'], vol, regular, None, 'EODHD'))
+            _extend_watermark(sid, '5m_range', cur.isoformat(), chunk_end.isoformat(), 'cached', f'{len(rows)} m5-Kerzen geprueft/geladen')
+            cur = chunk_end + timedelta(days=1)
+    return sid
+
+async def find_earliest_available(probe_fn, low: date_cls, high: date_cls) -> date_cls | None:
+    """Reine Bisektion (probe_fn ist async: Callable[[date], Awaitable[bool]]):
+    findet das fruehste Datum mit verfuegbaren Daten in [low, high]. Nimmt an,
+    dass Verfuegbarkeit monoton ist (beginnt einmal, dann durchgehend bis heute).
+    7-Tage-Sondierungsfenster in probe_fn vermeiden falsch-negative Ergebnisse an
+    Wochenenden/Feiertagen am Bisektions-Mittelpunkt. None, wenn selbst `high`
+    keine Daten hat. ~log2(Tage/7) Aufrufe von probe_fn."""
+    if not await probe_fn(high):
+        return None
+    if await probe_fn(low):
+        return low
+    lo, hi = low, high
+    while (hi - lo).days > 7:
+        mid = lo + (hi - lo) // 2
+        if await probe_fn(mid):
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
+async def probe_m5_week(ticker: str, week_start: date_cls) -> bool:
+    """Gibt es echte m5-Kerzen in den 7 Tagen ab week_start? (1 EODHD-Aufruf)"""
+    start_ts = int(datetime.combine(week_start, datetime.min.time(), tzinfo=timezone.utc).timestamp())
+    end_ts = int(datetime.combine(week_start + timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc).timestamp())
+    rows = await fetch_intraday(ticker if '.' in ticker else f'{ticker}.US', '5m', start_ts, end_ts)
+    return len(rows) > 0
+
+async def find_earliest_m5(ticker: str) -> date_cls | None:
+    """Echte, pro-Ticker verifizierte M5-Startsuche (ersetzt die alte globale
+    Schaetzung). Nutzt PLATFORM_5M_SEARCH_FLOOR als sichere untere Suchgrenze.
+    `high` muss ein Datum sein, dessen 7-Tage-Sondierungsfenster vollstaendig
+    in der Vergangenheit liegt - sonst prueft probe_fn(high) grossenteils noch
+    nicht existierende zukuenftige Kerzen und liefert faelschlich False."""
+    low = date_cls.fromisoformat(PLATFORM_5M_SEARCH_FLOOR)
+    high = date_cls.today() - timedelta(days=8)
+    return await find_earliest_available(partial(probe_m5_week, ticker), low, high)
+
+async def ensure_m5_earliest(ticker: str) -> dict:
+    """Liefert den verifizierten M5-Start, gecacht in data_availability
+    (interval='m5_earliest', status='verified'). Sucht nur einmal pro Ticker."""
+    sid = symbol_id(ticker)
+    with conn() as c:
+        row = c.execute("select first_available_at, status from data_availability where symbol_id=? and interval='m5_earliest'", (sid,)).fetchone()
+    if row and row['status'] == 'verified' and row['first_available_at']:
+        return {'m5_history_start': row['first_available_at'], 'verified': True, 'from_cache': True}
+    earliest = await find_earliest_m5(ticker)
+    result_date = earliest.isoformat() if earliest else None
+    with conn() as c:
+        c.execute(
+            "insert into data_availability(symbol_id,interval,first_available_at,status,message,checked_at) values(?,?,?,?,?,current_timestamp) "
+            "on conflict(symbol_id,interval) do update set first_available_at=excluded.first_available_at, status=excluded.status, message=excluded.message, checked_at=current_timestamp",
+            (sid, 'm5_earliest', result_date, 'verified', 'Echte m5-Startsuche (Bisektion, live gegen EODHD)' if earliest else 'Keine m5-Daten fuer diesen Ticker gefunden'))
+    return {'m5_history_start': result_date, 'verified': True, 'from_cache': False}
+
+def _drop_broken_ohlc(rows: list[dict]) -> list[dict]:
+    """EODHD liefert im breiten mehrjaehrigen Abruf vereinzelt kaputte/Platzhalter-
+    Zeilen mit OHLC=None. Solche Zeilen NIE fuer Berechnungen verwenden und NIE
+    stillschweigend durch einen Wert ersetzen (Datenpolitik) - einfach entfernen.
+    Das reduziert die Kerzenzahl im betroffenen Aggregations-Fenster, wodurch die
+    bestehende incomplete-Markierung automatisch greift, statt den Server abstuerzen
+    zu lassen oder Daten zu erfinden."""
+    return [r for r in rows if r['open'] is not None and r['high'] is not None and r['low'] is not None and r['close'] is not None]
 
 def _regular_intraday(sid: int, date: str, cutoff_et: str | None):
     with conn() as c:
@@ -63,6 +210,7 @@ def _regular_intraday(sid: int, date: str, cutoff_et: str | None):
             "select timestamp_et as time, open, high, low, close, volume from price_bars_intraday "
             "where symbol_id=? and interval='5m' and substr(timestamp_utc,1,10)=? and is_regular_session=1 "
             "order by timestamp_utc", (sid, date))]
+    rows = _drop_broken_ohlc(rows)
     # Nur Kerzen ab 09:30 ET (Pre-Market ausschliessen) und bis zum Cutoff.
     out = []
     for r in rows:
@@ -76,23 +224,30 @@ def _regular_intraday(sid: int, date: str, cutoff_et: str | None):
         out.append(r)
     return out
 
-def intraday_bars(ticker: str, date: str, timeframe='5m', cutoff_et: str | None = None):
-    sid = symbol_id(ticker)
-    rows = _regular_intraday(sid, date, cutoff_et)
-    if timeframe == '5m' or not rows:
-        return rows
-    size = 15 if timeframe == '15m' else 30
-    expected = size // 5
-    session_len = _session_length_min(date)
-    buckets: dict[int, list] = {}
+_TIMEFRAME_MINUTES = {'15m': 15, '30m': 30, '1h': 60}
+
+def aggregate_bars(rows: list[dict], size_min: int) -> list[dict]:
+    """Buendelt 5m-Zeilen (Feldform wie _regular_intraday()/_regular_intraday_range())
+    in size_min-Fenster, verankert an 09:30 ET, pro Kalendertag gruppiert (Schluessel
+    (Datum, Fenster-Index)), damit mehrtaegige Bereiche nicht ueber Tagesgrenzen
+    hinweg vermischt werden. Unvollstaendige Fenster (Datenluecke) werden markiert,
+    nicht stillschweigend als vollstaendig behandelt - gleiche Regel wie bisher.
+    Filtert defensiv kaputte OHLC=None-Zeilen (siehe _drop_broken_ohlc), damit
+    diese Funktion auch bei direktem Aufruf mit ungefiltertem Input nie abstuerzt."""
+    rows = _drop_broken_ohlc(rows)
+    expected = size_min // 5
+    buckets: dict[tuple, list] = {}
     for r in rows:
+        d = r['time'][:10]
         m = _mins_since_open(r['time'])
-        if m >= session_len:  # 16:00-Schlussprint u.ae. nicht in ein neues Fenster
+        if m < 0:
             continue
-        buckets.setdefault(m // size, []).append(r)
+        if m >= _session_length_min(d):  # 16:00-Schlussprint u.ae. nicht in ein neues Fenster
+            continue
+        buckets.setdefault((d, m // size_min), []).append(r)
     out = []
-    for idx in sorted(buckets):
-        chunk = sorted(buckets[idx], key=lambda x: x['time'])
+    for key in sorted(buckets):
+        chunk = sorted(buckets[key], key=lambda x: x['time'])
         complete = len(chunk) == expected
         out.append({
             'time': chunk[0]['time'], 'open': chunk[0]['open'],
@@ -102,6 +257,66 @@ def intraday_bars(ticker: str, date: str, timeframe='5m', cutoff_et: str | None 
             'bars_in_window': len(chunk), 'bars_expected': expected,
         })
     return out
+
+def intraday_bars(ticker: str, date: str, timeframe='5m', cutoff_et: str | None = None):
+    sid = symbol_id(ticker)
+    rows = _regular_intraday(sid, date, cutoff_et)
+    if timeframe == '5m' or not rows:
+        return rows
+    return aggregate_bars(rows, _TIMEFRAME_MINUTES[timeframe])
+
+def _regular_intraday_range(sid: int, date_from: str, date_to: str):
+    """Wie _regular_intraday(), aber ueber einen Datumsbereich und OHNE Cutoff -
+    rein visuelle Breitband-Daten fuer Chart-Browsing/Replay. NIEMALS fuer
+    Look-ahead-sensible Berechnungen verwenden (dafuer bleibt _regular_intraday()
+    + compute_metrics() die einzige Quelle)."""
+    with conn() as c:
+        rows = [dict(r) for r in c.execute(
+            "select timestamp_et as time, open, high, low, close, volume from price_bars_intraday "
+            "where symbol_id=? and interval='5m' and is_regular_session=1 "
+            "and substr(timestamp_utc,1,10) between ? and ? "
+            "order by timestamp_utc", (sid, date_from, date_to))]
+    rows = _drop_broken_ohlc(rows)
+    return [r for r in rows if _mins_since_open(r['time']) >= 0]
+
+def intraday_bars_range(ticker: str, date_from: str, date_to: str, timeframe: str = '5m'):
+    sid = symbol_id(ticker)
+    rows = _regular_intraday_range(sid, date_from, date_to)
+    if timeframe == '5m' or not rows:
+        return rows
+    return aggregate_bars(rows, _TIMEFRAME_MINUTES[timeframe])
+
+def daily_bars_range(ticker: str, date_from: str, date_to: str):
+    sid = symbol_id(ticker)
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "select date as time, open, high, low, close, volume from price_bars_daily "
+            "where symbol_id=? and date between ? and ? order by date", (sid, date_from, date_to))]
+
+def weekly_bars_range(ticker: str, date_from: str, date_to: str):
+    sid = symbol_id(ticker)
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "select date as time, open, high, low, close, volume from price_bars_weekly "
+            "where symbol_id=? and date between ? and ? order by date", (sid, date_from, date_to))]
+
+def indicator_series(bars: list[dict]) -> dict:
+    """EMA10/EMA20/SMA50/SMA200 fuer die uebergebenen Kerzen (zeitebenen-nativ:
+    auf den Closes DIESER Zeitebene, nicht immer auf Daily-Closes - entspricht
+    dem, was TradingView auf einem m5/h1/w1-Chart tatsaechlich zeigt). Nutzt die
+    bereits implementierten, getesteten Array-Varianten sma()/ema() aus
+    formulas.py. None-Praefix-Eintraege werden entfernt (kein irrefuehrend
+    verkuerzter Linienanfang), analog zum sma_last()/ema_last()-None-Schutz."""
+    closes = [b['close'] for b in bars]
+    times = [b['time'] for b in bars]
+    def series(values, times):
+        return [{'time': t, 'value': v} for t, v in zip(times, values) if v is not None]
+    return {
+        'ema10': series(ema(closes, 10), times),
+        'ema20': series(ema(closes, 20), times),
+        'sma50': series(sma(closes, 50), times),
+        'sma200': series(sma(closes, 200), times),
+    }
 
 def _daily_before(sid: int, date: str):
     """Abgeschlossene Daily-Kerzen STRIKT vor dem Entry-Tag (kein Look-ahead)."""
