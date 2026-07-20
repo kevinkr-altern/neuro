@@ -6,7 +6,24 @@ def conn():
     Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(settings.database_path)
     c.row_factory = sqlite3.Row
+    c.execute("pragma foreign_keys=on")
     return c
+
+# Zusaetzliche Spalten fuer setups, die bei Bestands-DBs nachgezogen werden.
+_SETUP_COLUMNS = {
+    'entry_date': 'text',
+    'entry_time': 'text',
+    'entry_timezone': "text default 'ET'",
+    'entry_price': 'real',
+    'exit_date': 'text',
+    'exit_time': 'text',
+    'exit_price': 'real',
+    'stop_price': 'real',
+    'pivot_level_price': 'real',
+    'cutoff_timestamp': 'text',
+    'was_playback_enforced': 'integer default 0',
+    'data_status': 'text',
+}
 
 def init_db():
     with conn() as c:
@@ -19,7 +36,16 @@ def init_db():
         create table if not exists setup_markers(id integer primary key, setup_id integer, marker_type text, timestamp text, price real, timeframe text, note text);
         create table if not exists import_batches(id integer primary key, filename text, uploaded_at text default current_timestamp, row_count integer, status text, mapping_json text, errors_json text);
         create table if not exists import_rows(batch_id integer, row_number integer, raw_json text, status text, error_message text);
+        create table if not exists playback_sessions(id integer primary key, setup_id integer, symbol_id integer, entry_date text, cutoff_timestamp text, was_playback_enforced integer default 1, created_at text default current_timestamp);
+        create table if not exists fundamental_snapshots(id integer primary key, symbol_id integer, as_of_date text, market_cap real, float_shares real, shares_outstanding real, source text, created_at text default current_timestamp);
         ''')
+        # Neue setups-Spalten fuer Bestands-DBs nachziehen.
+        have = {r[1] for r in c.execute("pragma table_info(setups)")}
+        for col, decl in _SETUP_COLUMNS.items():
+            if col not in have:
+                c.execute(f"alter table setups add column {col} {decl}")
+        # Duplikat-Schutz: gleicher Ticker + gleiches Entry-Datum nur einmal.
+        c.execute("create unique index if not exists ux_setups_symbol_date on setups(symbol_id, entry_date) where entry_date is not null")
 
 def symbol_id(ticker: str, exchange: str='US') -> int:
     eod = ticker if '.' in ticker else f"{ticker}.{exchange}"

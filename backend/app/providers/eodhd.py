@@ -6,17 +6,37 @@ BASE = "https://eodhd.com/api"
 
 class EodhdError(Exception): pass
 
-async def fetch_intraday(symbol: str, interval: str, from_ts: int, to_ts: int):
-    if not settings.eodhd_api_key or settings.eodhd_api_key == 'put_your_key_here':
+def _require_key():
+    if not settings.eodhd_api_key or settings.eodhd_api_key in ('put_your_key_here', ''):
         raise EodhdError('EODHD_API_KEY fehlt. Bitte in .env eintragen.')
-    params = {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'interval': interval, 'from': from_ts, 'to': to_ts}
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(f"{BASE}/intraday/{symbol}", params=params)
+
+async def _get(url: str, params: dict):
+    _require_key()
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url, params=params)
+    except httpx.TimeoutException:
+        raise EodhdError('Zeitueberschreitung bei EODHD. Bitte spaeter erneut versuchen.')
+    except httpx.HTTPError as e:
+        raise EodhdError(f'Netzwerkfehler zu EODHD: {e}. Besteht eine Internetverbindung?')
+    if r.status_code == 401 or r.status_code == 403:
+        raise EodhdError('EODHD lehnt den API-Key ab (ungueltig, abgelaufen oder Tarif deckt diese Daten nicht).')
+    if r.status_code == 429:
+        raise EodhdError('EODHD-Kontingent erschoepft (HTTP 429). Bitte spaeter erneut versuchen.')
     if r.status_code != 200:
         raise EodhdError(f'EODHD Fehler {r.status_code}: {r.text[:300]}')
     data = r.json()
     if isinstance(data, dict) and data.get('errors'):
         raise EodhdError(str(data['errors']))
+    return data
+
+async def fetch_intraday(symbol: str, interval: str, from_ts: int, to_ts: int):
+    data = await _get(f"{BASE}/intraday/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'interval': interval, 'from': from_ts, 'to': to_ts})
+    return data if isinstance(data, list) else []
+
+async def fetch_eod(symbol: str, date_from: str, date_to: str):
+    """Unadjustierte Daily-OHLC plus separater adjusted_close."""
+    data = await _get(f"{BASE}/eod/{symbol}", {'api_token': settings.eodhd_api_key, 'fmt': 'json', 'from': date_from, 'to': date_to, 'period': 'd'})
     return data if isinstance(data, list) else []
 
 async def check_m5(symbol: str, date: str):
