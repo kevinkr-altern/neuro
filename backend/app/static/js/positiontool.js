@@ -141,11 +141,6 @@ SM._updatePositionRects = function () {
   if (!p) return;
   p.rectTarget.setBounds(p.entryTimeUnix, p.exitTimeUnix, p.entryPrice, p.targetPrice);
   p.rectStop.setBounds(p.entryTimeUnix, p.exitTimeUnix, p.stopPrice, p.entryPrice);
-  // Deutlich markierte Entry-Linie - vorher war nur die Grenze zwischen den
-  // beiden Zonen implizit "der Entry", ohne eigene Beschriftung.
-  SM.setReferenceLineGroup('position', [
-    { price: p.entryPrice, color: '#4dabf7', title: p.closedReason ? 'Entry (zu)' : 'Entry' },
-  ]);
   SM._updatePositionOverlay();
   SM._commitPositionToForm();
   SM._updateOrbBreakoutResults();
@@ -158,7 +153,6 @@ SM.clearPosition = function () {
   }
   SM.position = null;
   SM._hidePositionOverlay();
-  SM.setReferenceLineGroup('position', []);
   const el = SM.$('posOrbResults');
   if (el) el.style.display = 'none';
 };
@@ -343,6 +337,7 @@ SM._ensurePositionOverlayEls = function () {
   mk('posTargetLabel', 'pos-target');
   mk('posStopLabel', 'pos-stop');
   mk('posTooltip', 'pos-tooltip');
+  mk('posEntryLabel', 'pos-entry');
 };
 
 SM._updatePositionOverlay = function () {
@@ -383,10 +378,19 @@ SM._updatePositionOverlay = function () {
     const statusText = p.closedReason ? ` — GESCHLOSSEN (${reasonLabels[p.closedReason] || p.closedReason})` : '';
     ttEl.textContent = `Open PnL: ${openPnl.toFixed(2)}, Qty: ${p.qty}, R:R ${rr.toFixed(2)}${statusText}`;
   } else ttEl.style.display = 'none';
+
+  // Entry-Preis direkt am Einstiegspunkt selbst - nicht mehr als
+  // Preisachsen-Linie (die war frei schwebend rechts am Rand und optisch
+  // vom tatsaechlichen Einstiegspunkt in der Mitte des Charts abgekoppelt).
+  const entryEl = SM.$('posEntryLabel');
+  if (entryX != null && entryY != null) {
+    entryEl.style.display = 'block'; entryEl.style.left = entryX + 'px'; entryEl.style.top = entryY + 'px';
+    entryEl.textContent = `Entry: ${p.entryPrice.toFixed(2)}${p.closedReason ? ' (zu)' : ''}`;
+  } else entryEl.style.display = 'none';
 };
 
 SM._hidePositionOverlay = function () {
-  ['posTargetLabel', 'posStopLabel', 'posTooltip'].forEach((id) => { const el = SM.$(id); if (el) el.style.display = 'none'; });
+  ['posTargetLabel', 'posStopLabel', 'posTooltip', 'posEntryLabel'].forEach((id) => { const el = SM.$(id); if (el) el.style.display = 'none'; });
 };
 
 SM._commitPositionToForm = function () {
