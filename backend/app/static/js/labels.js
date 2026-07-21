@@ -116,17 +116,20 @@ SM._fmtPrice = function (v) { return v == null ? '—' : v.toFixed(2); };
 // separat vom Kennzahlen-Inhalt gehalten wird.
 SM.metricCardCollapsed = {};
 
-SM._card = function (id, title, bodyHtml, badgeHtml) {
+// toggleFn (optional): Name der neu zu rendernden Funktion beim Auf-/
+// Zuklappen - Karten ausserhalb des Kennzahlen-Tabs (z.B. auf der Analyse-
+// Seite) muessen ihre EIGENE Seite neu zeichnen statt die Kennzahlen-Tabelle.
+SM._card = function (id, title, bodyHtml, badgeHtml, toggleFn) {
   const collapsed = !!SM.metricCardCollapsed[id];
   return `<div class="metric-card${collapsed ? ' collapsed' : ''}" data-card="${id}">
-    <h4 onclick="SM.toggleMetricCard('${id}')"><span>${title}</span>${collapsed && badgeHtml ? badgeHtml : ''}<span class="card-caret">${collapsed ? '▸' : '▾'}</span></h4>
+    <h4 onclick="SM.toggleMetricCard('${id}', ${toggleFn ? `'${toggleFn}'` : 'null'})"><span>${title}</span>${collapsed && badgeHtml ? badgeHtml : ''}<span class="card-caret">${collapsed ? '▸' : '▾'}</span></h4>
     <div class="metric-card-body">${bodyHtml}</div>
   </div>`;
 };
 
-SM.toggleMetricCard = function (id) {
+SM.toggleMetricCard = function (id, toggleFn) {
   SM.metricCardCollapsed[id] = !SM.metricCardCollapsed[id];
-  SM.fillMetricsTable();
+  (toggleFn ? SM[toggleFn] : SM.fillMetricsTable)();
 };
 
 SM._minerviniBadge = function (score) {
@@ -259,6 +262,7 @@ SM.viewLabelOnChart = async function (id) {
   const rects = SM._createPositionRects();
   SM.position.rectTarget = rects.rectTarget; SM.position.rectStop = rects.rectStop;
   SM._updatePositionRects();
+  SM.showPage('chart');
   document.querySelector('[data-tab="metrics"]').click();
   SM.setMsg(`Gespeicherter Trade geladen: ${label.setup_name} (${label.entry_date}).`);
 };

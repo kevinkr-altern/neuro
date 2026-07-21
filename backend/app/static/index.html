@@ -4,6 +4,11 @@
 </head><body>
 <header class="topbar">
   <div class="topbar-left">
+    <div class="page-nav" id="pageNav">
+      <button class="page-nav-btn active" data-page="chart">Chart</button>
+      <button class="page-nav-btn" data-page="trades">Trades</button>
+      <button class="page-nav-btn" data-page="analyse">Analyse</button>
+    </div>
     <input id="ticker" value="NVDA" placeholder="Ticker" size="8" autocomplete="off">
     <button id="btnLoad">Laden</button>
     <div class="tf-group" id="tfGroup">
@@ -34,7 +39,7 @@
 
 <div class="notices"><div id="banner"></div><div id="err"></div><div id="msg"></div></div>
 
-<main class="layout">
+<main class="layout" id="pageChart">
   <section class="chart-col">
     <div id="chartContainer" class="chart-container">
       <div id="chartLegend" class="chart-legend"></div>
@@ -109,7 +114,6 @@
       <button class="tab-btn active" data-tab="metrics">Kennzahlen</button>
       <button class="tab-btn" data-tab="label">Label</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
-      <button class="tab-btn" data-tab="analysis">Analyse</button>
     </div>
     <div class="tab-panel" id="tabMetrics">
       <div id="metrics" class="metrics-grid"></div>
@@ -149,12 +153,18 @@
       <div id="watchlistGroups"></div>
       <p class="hint">Ticker anklicken laedt ihn in den Chart. Kategorie frei eintippen (bereits verwendete werden vorgeschlagen).</p>
     </div>
-    <div class="tab-panel hidden" id="tabAnalysis">
-      <div id="analysisContent" class="metrics-grid"></div>
-      <p class="hint">Wertet alle gespeicherten Labels aus (nur solche mit eingetragenem Ergebnis R). Aufschluesselung nach Stop-Strategie zeigt, welche Stop-Regel im Schnitt am besten abschneidet.</p>
-    </div>
   </aside>
 </main>
+
+<section class="page hidden" id="pageTrades">
+  <div class="page-header"><h2>Trade-Übersicht</h2><p class="hint">Alle gespeicherten Labels als Tabelle. 📈 zeigt die Trade-Box im Chart, 🔬 öffnet die Szenario-Simulation für genau diesen Trade (alternative Stop-Strategien, ORB-Durchbruch-Entry).</p></div>
+  <div id="tradesContent"></div>
+</section>
+
+<section class="page hidden" id="pageAnalyse">
+  <div class="page-header"><h2>Analyse</h2><p class="hint">Wertet alle gespeicherten Labels aus (nur solche mit eingetragenem Ergebnis R). Die Szenario-Simulation berechnet retrospektiv, wie alternative Stop-Strategien und ein ORB-Durchbruch-Entry (M5/M15/M30) statt des tatsächlichen Entrys abgeschnitten hätten - reine Nachbetrachtung, kein Modell-Input.</p></div>
+  <div id="analysisContent" class="analyse-grid"></div>
+</section>
 
 <details class="panel secondary">
   <summary>CSV-Import / Export / Backup</summary>
@@ -189,6 +199,7 @@
 <script src="/static/js/marketstate.js"></script>
 <script src="/static/js/minervini.js"></script>
 <script src="/static/js/watchlist.js"></script>
+<script src="/static/js/simulate.js"></script>
 <script src="/static/js/analysis.js"></script>
 <script src="/static/js/settingspanel.js"></script>
 <script src="/static/js/app.js"></script>

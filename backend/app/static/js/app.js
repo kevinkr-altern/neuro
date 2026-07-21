@@ -50,6 +50,22 @@ SM.loadTicker = async function (timeframe) {
   } catch (e) { SM.showErr(e.message); SM.setMsg(''); }
 };
 
+// Seiten-Umschaltung: Chart (bestehendes Layout inkl. Sidebar) vs. die
+// beiden neuen vollflaechigen Seiten Trades/Analyse - "Tradeuebersicht und
+// Analyse sollen eigene ganze Seiten sein statt in die schmale Sidebar
+// gequetscht" (Nutzer-Feedback). Lazy-Load der Seiteninhalte erst beim
+// ersten Aufruf, danach bei jedem erneuten Aufruf frisch neu geladen (damit
+// neu gespeicherte Labels sofort sichtbar sind).
+SM.PAGE_IDS = { chart: 'pageChart', trades: 'pageTrades', analyse: 'pageAnalyse' };
+SM.showPage = function (name) {
+  Object.values(SM.PAGE_IDS).forEach((id) => { const el = SM.$(id); if (el) el.classList.add('hidden'); });
+  const el = SM.$(SM.PAGE_IDS[name] || SM.PAGE_IDS.chart);
+  if (el) el.classList.remove('hidden');
+  document.querySelectorAll('#pageNav .page-nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.page === name));
+  if (name === 'trades') SM.loadTradesPage();
+  if (name === 'analyse') SM.loadAnalysis();
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   const chart = SM.initChart(SM.$('chartContainer'));
   SM.applyStyle(SM.loadStyle());
@@ -173,8 +189,11 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const panelId = 'tab' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1);
       SM.$(panelId).classList.remove('hidden');
-      if (btn.dataset.tab === 'analysis') SM.loadAnalysis();
     });
+  });
+
+  document.querySelectorAll('#pageNav .page-nav-btn').forEach((btn) => {
+    btn.addEventListener('click', () => SM.showPage(btn.dataset.page));
   });
 
   SM.$('btnImportCsv').addEventListener('click', () => SM.importCsv(SM.$('csv').files[0]));

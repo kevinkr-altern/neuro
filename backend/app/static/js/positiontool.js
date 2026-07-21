@@ -153,6 +153,8 @@ SM.clearPosition = function () {
   }
   SM.position = null;
   SM._hidePositionOverlay();
+  const chartEl = SM.$('chartContainer');
+  if (chartEl) chartEl.style.cursor = '';
   const el = SM.$('posOrbResults');
   if (el) el.style.display = 'none';
 };
@@ -428,16 +430,25 @@ SM._maybeComputeExitMetrics = function () {
 
 // ---------- Maus-Ereignisse ----------
 
+// Stop-/Ziel-Linien sind ueber ihre GESAMTE Breite greifbar (nicht nur an
+// der Kante bei exitX) - wie das Ziehen einer Kastenkante bei TradingView.
+// Nur die Exit-Zeit (rechte Kante) bleibt ein schmaler, senkrechter Griff,
+// und nur ausserhalb der Stop-/Ziel-Toleranz, damit er ihnen keine Klicks
+// wegschnappt.
 SM._posHandleHit = function (x, y) {
   if (!SM.position) return null;
   const cs = SM.chartState;
   const ts = cs.chart.timeScale();
+  const entryX = ts.timeToCoordinate(SM.position.entryTimeUnix);
   const exitX = ts.timeToCoordinate(SM.position.exitTimeUnix);
   if (exitX == null) return null;
   const stopY = cs.candleSeries.priceToCoordinate(SM.position.stopPrice);
   const targetY = cs.candleSeries.priceToCoordinate(SM.position.targetPrice);
-  if (stopY != null && Math.abs(x - exitX) <= POS_HANDLE_TOLERANCE_PX && Math.abs(y - stopY) <= POS_HANDLE_TOLERANCE_PX) return 'stop';
-  if (targetY != null && Math.abs(x - exitX) <= POS_HANDLE_TOLERANCE_PX && Math.abs(y - targetY) <= POS_HANDLE_TOLERANCE_PX) return 'target';
+  const xLo = Math.min(entryX != null ? entryX : exitX, exitX) - POS_HANDLE_TOLERANCE_PX;
+  const xHi = Math.max(entryX != null ? entryX : exitX, exitX) + POS_HANDLE_TOLERANCE_PX;
+  const withinBoxX = x >= xLo && x <= xHi;
+  if (stopY != null && withinBoxX && Math.abs(y - stopY) <= POS_HANDLE_TOLERANCE_PX) return 'stop';
+  if (targetY != null && withinBoxX && Math.abs(y - targetY) <= POS_HANDLE_TOLERANCE_PX) return 'target';
   if (Math.abs(x - exitX) <= POS_HANDLE_TOLERANCE_PX) return 'exit';
   return null;
 };
@@ -492,12 +503,31 @@ SM.initPositionTool = function () {
       SM.position.rectTarget = rects.rectTarget; SM.position.rectStop = rects.rectStop;
       SM.chartState.chart.applyOptions({ handleScroll: false, handleScale: false });
       SM._updatePositionRects();
+      // Beim Platzieren mitten in bereits aufgedecktem Replay-Verlauf (z.B.
+      // Entry weit links, Replay-Position bereits weit rechts) muessen die
+      // dazwischen liegenden, laengst sichtbaren Kerzen SOFORT auf einen
+      // Stop-/Ziel-Treffer geprueft werden - sonst wuerde das erst beim
+      // naechsten Replay-Fortschritt erkannt, obwohl der Trade retrospektiv
+      // betrachtet schon laengst ausgestoppt gewesen waere.
+      SM._maybeAutoCloseOnStop();
       e.preventDefault();
     }
   });
 
   container.addEventListener('mousemove', (e) => {
-    if (!SM.position || !SM.position.dragging) return;
+    if (!SM.position || !SM.position.dragging) {
+      // Mauszeiger-Feedback, damit die greifbaren Stop-/Ziel-/Exit-Linien
+      // ueberhaupt als solche erkennbar sind (vorher: keinerlei Hinweis,
+      // wo genau man klicken/ziehen muss).
+      if (SM.position && !SM.position.closedReason) {
+        const { x, y } = SM._posXY(e);
+        const hit = SM._posHandleHit(x, y);
+        container.style.cursor = (hit === 'stop' || hit === 'target') ? 'ns-resize' : (hit === 'exit' ? 'ew-resize' : '');
+      } else if (container.style.cursor) {
+        container.style.cursor = '';
+      }
+      return;
+    }
     const { x, y } = SM._posXY(e);
     const ts = SM.chartState.chart.timeScale();
     if (SM.position.dragging === 'stop') {
