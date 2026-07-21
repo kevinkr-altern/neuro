@@ -25,6 +25,7 @@ SM.replayDisarm = function () {
   SM.replay.positionTime = null;
   document.getElementById('replayBar').classList.add('hidden');
   SM.renderFull(SM.chartState.bars, SM.chartState.indicators);
+  SM.refreshMetricsForLastClose();
 };
 
 SM.replaySetStart = function (clickedIndex) {

@@ -12,8 +12,8 @@ SM.metrics = {};
 
 SM.labelOptions = {
   label_class: ['A+', 'Gut', 'Neutral', 'Fehlsignal', 'Bewusst geskippt'],
-  structure: ['HTF', 'Pullback', 'Base', 'EP'],
-  trigger: ['Base-BO', 'U&R', 'EMA-Reclaim', 'Reclaim-FT', 'EP-Trigger'],
+  structure: ['HTF', 'Pullback', 'Flat Base', 'Cup & Handle', 'Double Bottom'],
+  trigger: ['Base-BO', 'U&R', 'EMA-Reclaim', 'Reclaim-FT', 'EP-Trigger', 'ORB'],
   tactic: ['ORB m5', 'ORB m15', 'ORB m30', 'PDH Buy-Stop', 'Sniper', 'EOTD'],
   level_name: ['PDH', 'PDL-Reclaim', 'ORH m5', 'ORH m15', 'ORH m30', 'Pivot', 'EMA10', 'EMA20', 'Reclaim-Kerzenhoch'],
 };
@@ -40,6 +40,22 @@ SM.deriveCutoffFromReplay = function () {
   // D1/W1-Position hat keine Uhrzeit -> Sessionende annehmen (siehe Plan).
   const cutoff = timeMatch ? timeMatch[1] : '16:00:00';
   return { date, cutoff };
+};
+
+// Ausserhalb eines aktiven Replays sollen die Kennzahlen trotzdem nicht leer
+// bleiben, sondern den letzten verfuegbaren Handelstag zeigen ("Kennzahlen
+// der Aktie fuer den letzten Kurs"). Setzt dafuer NUR SM.replay.positionTime
+// (nicht .active/.revealIndex) und ruft denselben, bereits bestehenden
+// look-ahead-sicheren Pfad auf, den auch das aktive Replay nutzt - identische
+// Semantik wie "Replay auf der letzten Kerze pausiert".
+SM.refreshMetricsForLastClose = async function () {
+  if (SM.replay.active) return; // aktives Replay hat Vorrang, ueberschreibt nichts
+  const ticker = SM.$('ticker').value.trim().toUpperCase();
+  const dailyCache = SM.dataCache[ticker] && SM.dataCache[ticker]['1d'];
+  if (!dailyCache || !dailyCache.bars.length) return;
+  const lastBar = dailyCache.bars[dailyCache.bars.length - 1];
+  SM.replay.positionTime = lastBar.time;
+  await SM._refreshMetricsFromReplayPosition();
 };
 
 SM.markSetupHere = async function () {
@@ -70,6 +86,7 @@ SM.saveLabel = async function () {
       stop_price: SM.$('stop_price').value ? +SM.$('stop_price').value : null,
       target_price: SM.$('target_price').value ? +SM.$('target_price').value : null,
       pivot_level_price: SM.$('pivot_level_price').value ? +SM.$('pivot_level_price').value : null,
+      stop_strategy: SM.$('stop_strategy') ? SM.$('stop_strategy').value : null,
       notes: SM.$('notes').value,
       cutoff_timestamp: `${SM.lastEntryDate} ${SM.lastCutoff} ET`,
       was_playback_enforced: !!SM.replay.active,
@@ -202,11 +219,50 @@ SM.updateQuickStats = function () {
   el.innerHTML = chips.join('');
 };
 
+SM._labelsCache = [];
+
 SM.loadLabels = async function () {
   try {
     const l = await SM.api('/labels');
-    SM.$('labels').innerHTML = l.map((x) => `<tr><td>${x.ticker}</td><td>${x.entry_date || ''}</td><td>${x.setup_name}</td><td>${x.label_class}</td><td>${x.result_r ?? ''}</td><td><button class="btn-danger" title="Label loeschen" onclick="SM.deleteLabel(${x.id})">✕</button></td></tr>`).join('');
+    SM._labelsCache = l;
+    SM.$('labels').innerHTML = l.map((x) => `<tr><td>${x.ticker}</td><td>${x.entry_date || ''}</td><td>${x.setup_name}</td><td>${x.label_class}</td><td>${x.result_r ?? ''}</td>` +
+      `<td><button class="btn-secondary" title="Trade-Box im Chart anzeigen" onclick="SM.viewLabelOnChart(${x.id})">📈</button></td>` +
+      `<td><button class="btn-danger" title="Label loeschen" onclick="SM.deleteLabel(${x.id})">✕</button></td></tr>`).join('');
   } catch { /* Liste bleibt leer, kein harter Fehler */ }
+};
+
+// Zeigt die gespeicherten Entry-/Stop-/Ziel-/Exit-Preise eines Labels als
+// (nicht ziehbare) Trade-Box im Chart - fuer den Fall, dass ein Label ueber
+// das Formular gespeichert wurde, ohne dass die Box gerade sichtbar war
+// ("Label angelegt, aber keine Trade-Box zu sehen").
+SM.viewLabelOnChart = async function (id) {
+  const label = SM._labelsCache.find((x) => x.id === id);
+  if (!label) { SM.showErr('Label nicht gefunden - Liste evtl. neu laden.'); return; }
+  if (label.entry_price == null || label.stop_price == null) {
+    SM.showErr('Dieses Label hat keine gespeicherten Entry-/Stop-Preise - keine Trade-Box moeglich.');
+    return;
+  }
+  SM.clearPosition();
+  // "Max"-Zeitraum erzwingen, damit das (evtl. weit zurueckliegende) Entry-
+  // Datum sicher im geladenen Bereich liegt.
+  SM.chartState.rangeKey = 'max';
+  document.querySelectorAll('#rangeGroup [data-range]').forEach((b) => b.classList.toggle('active', b.dataset.range === 'max'));
+  SM.$('ticker').value = label.ticker;
+  await SM.loadTicker('1d');
+  const entryTimeUnix = SM.toUnixTime(label.entry_date);
+  const riskUnit = label.entry_price - label.stop_price;
+  const exitTimeUnix = label.exit_date ? SM.toUnixTime(label.exit_date) : entryTimeUnix + 86400 * 20;
+  SM.position = {
+    entryTimeUnix, entryPrice: label.entry_price, stopPrice: label.stop_price,
+    targetPrice: label.target_price != null ? label.target_price : label.entry_price + riskUnit * SM.DEFAULT_RR,
+    exitTimeUnix, exitPrice: label.exit_price != null ? label.exit_price : null,
+    closedReason: 'saved', stopStrategy: label.stop_strategy || 'none', qty: SM.DEFAULT_QTY, dragging: null,
+  };
+  const rects = SM._createPositionRects();
+  SM.position.rectTarget = rects.rectTarget; SM.position.rectStop = rects.rectStop;
+  SM._updatePositionRects();
+  document.querySelector('[data-tab="metrics"]').click();
+  SM.setMsg(`Gespeicherter Trade geladen: ${label.setup_name} (${label.entry_date}).`);
 };
 
 SM.deleteLabel = async function (id) {
@@ -233,6 +289,7 @@ SM.cancelLabel = function () {
   });
   if (SM.$('result_is_hypothetical')) SM.$('result_is_hypothetical').checked = false;
   if (SM.$('notes')) SM.$('notes').value = '';
+  if (SM.$('stop_strategy')) SM.$('stop_strategy').value = 'none';
   SM.nameIt();
   SM.clearPosition();
   SM.setMsg('Label-Entwurf verworfen.');

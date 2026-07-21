@@ -164,6 +164,7 @@ class SetupIn(BaseModel):
     entry_date: str; entry_time: str | None = None; entry_price: float | None = None
     exit_date: str | None = None; exit_time: str | None = None; exit_price: float | None = None
     stop_price: float | None = None; target_price: float | None = None; pivot_level_price: float | None = None
+    stop_strategy: str | None = None
     label_class: str; structure: str; trigger: str; tactic: str
     level_name: str | None = None; orderly_rating: int | None = None
     result_r: float | None = None; result_is_hypothetical: bool = False
@@ -181,10 +182,10 @@ def create_label(s: SetupIn):
     try:
         with conn() as c:
             cur = c.execute(
-                "insert into setups(symbol_id,setup_name,label_class,structure,trigger,tactic,level_name,orderly_rating,result_r,result_is_hypothetical,mfe_r,mae_r,notes,entry_date,entry_time,entry_price,exit_date,exit_time,exit_price,stop_price,target_price,pivot_level_price,cutoff_timestamp,was_playback_enforced,data_status) "
-                "values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into setups(symbol_id,setup_name,label_class,structure,trigger,tactic,level_name,orderly_rating,result_r,result_is_hypothetical,mfe_r,mae_r,notes,entry_date,entry_time,entry_price,exit_date,exit_time,exit_price,stop_price,target_price,pivot_level_price,stop_strategy,cutoff_timestamp,was_playback_enforced,data_status) "
+                "values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (sid, name, s.label_class, s.structure, s.trigger, s.tactic, s.level_name, s.orderly_rating, s.result_r, int(s.result_is_hypothetical), s.mfe_r, s.mae_r, s.notes,
-                 entry_date, s.entry_time, s.entry_price, s.exit_date, s.exit_time, s.exit_price, s.stop_price, s.target_price, s.pivot_level_price, s.cutoff_timestamp, int(s.was_playback_enforced), 'gespeichert'))
+                 entry_date, s.entry_time, s.entry_price, s.exit_date, s.exit_time, s.exit_price, s.stop_price, s.target_price, s.pivot_level_price, s.stop_strategy, s.cutoff_timestamp, int(s.was_playback_enforced), 'gespeichert'))
             setup_id = cur.lastrowid
             if s.was_playback_enforced:
                 c.execute("insert into playback_sessions(setup_id,symbol_id,entry_date,cutoff_timestamp,was_playback_enforced) values(?,?,?,?,1)", (setup_id, sid, entry_date, s.cutoff_timestamp))
