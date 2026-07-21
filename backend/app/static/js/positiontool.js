@@ -8,11 +8,52 @@
 // Erstversion: nur Long (Ziel oben, Stop unten, wie im Screenshot).
 var SM = window.SM = window.SM || {};
 
-SM.position = null; // {entryTimeUnix, entryPrice, stopPrice, targetPrice, exitTimeUnix, qty, rectTarget, rectStop, dragging}
+SM.position = null; // {entryTimeUnix, entryPrice, stopPrice, targetPrice, exitTimeUnix, qty, stopStrategy, rectTarget, rectStop, dragging}
 SM.positionArmed = false;
 SM.DEFAULT_RR = 2;
 SM.DEFAULT_QTY = 100;
 const POS_HANDLE_TOLERANCE_PX = 8;
+
+// ---------- Stop-Strategien: "harter Stopp" = einmalig bei Entry berechneter
+// fester Preis (EMA10/20 des VORTAGS), "Close < EMA" = taeglich neu bewertete
+// Regel (kein fester Preis - der Trade schliesst am ersten Tag, dessen
+// eigener Schlusskurs unter seine EIGENE, an dem Tag geltende EMA faellt).
+// Beide EMA-Varianten nutzen die taegliche EMA-Serie aus dem D1-Datencache
+// (dataCache[ticker]['1d'].indicators), unabhaengig von der aktuell
+// angezeigten Zeitebene - dieselbe Wiederverwendung wie bei den MFE/MAE-
+// Kennzahlen (_maybeComputeExitMetrics).
+SM.STOP_STRATEGIES = {
+  none: 'manuell', fixed_ema10_prevday: 'EMA10 Vortag (fest)', close_below_ema10: 'Close < EMA10',
+  fixed_ema20_prevday: 'EMA20 Vortag (fest)', close_below_ema20: 'Close < EMA20',
+};
+
+SM._dailyEmaSeries = function (emaKey) {
+  const ticker = SM.$('ticker').value.trim().toUpperCase();
+  const daily = SM.dataCache[ticker] && SM.dataCache[ticker]['1d'];
+  return (daily && daily.indicators && daily.indicators[emaKey]) || null;
+};
+
+SM._dailyEmaValueBefore = function (emaKey, dateIsoExclusive) {
+  const series = SM._dailyEmaSeries(emaKey);
+  if (!series) return null;
+  let prev = null;
+  for (const pt of series) {
+    if (pt.time >= dateIsoExclusive) break;
+    prev = pt;
+  }
+  return prev ? prev.value : null;
+};
+
+SM._dailyEmaValueAt = function (emaKey, dateIsoInclusive) {
+  const series = SM._dailyEmaSeries(emaKey);
+  if (!series) return null;
+  let latest = null;
+  for (const pt of series) {
+    if (pt.time > dateIsoInclusive) break;
+    latest = pt;
+  }
+  return latest ? latest.value : null;
+};
 
 SM.armPositionTool = function () {
   SM.positionArmed = !SM.positionArmed;
@@ -147,6 +188,10 @@ SM._nearestBar = function (timeUnix) {
 SM._maybeAutoCloseOnStop = function () {
   const p = SM.position;
   if (!p || p.closedReason) return;
+  if (p.stopStrategy === 'close_below_ema10' || p.stopStrategy === 'close_below_ema20') {
+    SM._checkDynamicStopStrategy(p);
+    return;
+  }
   const bars = SM.chartState.bars;
   const revealIndex = SM.replay.revealIndex;
   if (revealIndex == null || revealIndex < 0) return;
@@ -160,6 +205,45 @@ SM._maybeAutoCloseOnStop = function () {
   if (p.closedReason) {
     SM._updatePositionRects();
     SM._finalizeClosedPosition(p.closedReason === 'stop' ? 'Stop ausgeloest' : 'Ziel erreicht');
+  }
+};
+
+// Dynamische Stop-Strategien (Close < EMA10/20): kein fester Preis, sondern
+// eine taeglich neu bewertete Regel. Die Stop-Linie wird optisch auf den
+// jeweils aktuellen EMA-Stand nachgefuehrt ("der Stop bewegt sich mit der
+// EMA"), UND es wird geprueft, ob ein bereits aufgedeckter Tag mit seinem
+// Schlusskurs unter seine EIGENE (an dem Tag geltende) EMA gefallen ist - nur
+// bis zur aktuellen Replay-Position (SM.replay.positionTime), damit keine
+// zukuenftigen Tage einfliessen (Look-ahead-Schutz).
+SM._checkDynamicStopStrategy = function (p) {
+  if (!SM.replay.positionTime) return;
+  const emaKey = p.stopStrategy === 'close_below_ema10' ? 'ema10' : 'ema20';
+  const series = SM._dailyEmaSeries(emaKey);
+  const ticker = SM.$('ticker').value.trim().toUpperCase();
+  const daily = SM.dataCache[ticker] && SM.dataCache[ticker]['1d'];
+  if (!series || !daily) return;
+  const emaByTime = {};
+  series.forEach((pt) => { emaByTime[pt.time] = pt.value; });
+  const entryDateIso = new Date(p.entryTimeUnix * 1000).toISOString().slice(0, 10);
+  const asOfDateIso = SM.replay.positionTime.slice(0, 10);
+  const bars = daily.bars.filter((b) => b.time >= entryDateIso && b.time <= asOfDateIso);
+  let breach = null;
+  let latestEma = null;
+  for (const b of bars) {
+    const ema = emaByTime[b.time];
+    if (ema == null) continue;
+    latestEma = ema;
+    if (!breach && b.close < ema) breach = { timeUnix: SM.toUnixTime(b.time), exitPrice: b.close };
+  }
+  if (breach) {
+    p.exitTimeUnix = breach.timeUnix; p.exitPrice = breach.exitPrice; p.closedReason = 'stop_strategy';
+    SM._updatePositionRects();
+    SM._finalizeClosedPosition(`Stop-Strategie ausgeloest (${SM.STOP_STRATEGIES[p.stopStrategy]})`);
+    return;
+  }
+  if (latestEma != null && latestEma !== p.stopPrice) {
+    p.stopPrice = latestEma;
+    SM._updatePositionRects();
   }
 };
 
@@ -186,7 +270,8 @@ SM._finalizeClosedPosition = async function (reasonText) {
   const entryDateIso = new Date(p.entryTimeUnix * 1000).toISOString().slice(0, 10);
   const isIntraday = SM.chartState.timeframe !== '1d' && SM.chartState.timeframe !== '1w';
   const cutoff = isIntraday ? new Date(p.entryTimeUnix * 1000).toISOString().slice(11, 19) : '16:00:00';
-  SM.setMsg(`Position geschlossen (${reasonText}) am ${exitDateIso}. Kennzahlen fuer den Entry-Tag werden geladen - danach im Label-Tab pruefen und "Label speichern" klicken.`, p.closedReason === 'stop' ? 'warn' : 'msg');
+  const isStopClose = p.closedReason === 'stop' || p.closedReason === 'stop_strategy';
+  SM.setMsg(`Position geschlossen (${reasonText}) am ${exitDateIso}. Kennzahlen fuer den Entry-Tag werden geladen - danach im Label-Tab pruefen und "Label speichern" klicken.`, isStopClose ? 'warn' : 'msg');
   try {
     const ticker = SM.$('ticker').value.trim().toUpperCase();
     const r = await SM.getChartCutoff(ticker, entryDateIso, '5m', cutoff);
@@ -294,7 +379,8 @@ SM._updatePositionOverlay = function () {
   const ttEl = SM.$('posTooltip');
   if (entryX != null && entryY != null) {
     ttEl.style.display = 'block'; ttEl.style.left = entryX + 'px'; ttEl.style.top = entryY + 'px';
-    const statusText = p.closedReason ? ` — GESCHLOSSEN (${p.closedReason === 'stop' ? 'Stop' : p.closedReason === 'target' ? 'Ziel' : 'manuell'})` : '';
+    const reasonLabels = { stop: 'Stop', target: 'Ziel', stop_strategy: 'Stop-Strategie', manual: 'manuell', saved: 'gespeichert' };
+    const statusText = p.closedReason ? ` — GESCHLOSSEN (${reasonLabels[p.closedReason] || p.closedReason})` : '';
     ttEl.textContent = `Open PnL: ${openPnl.toFixed(2)}, Qty: ${p.qty}, R:R ${rr.toFixed(2)}${statusText}`;
   } else ttEl.style.display = 'none';
 };
@@ -308,6 +394,7 @@ SM._commitPositionToForm = function () {
   if (SM.$('entry_price')) SM.$('entry_price').value = p.entryPrice.toFixed(2);
   if (SM.$('stop_price')) SM.$('stop_price').value = p.stopPrice.toFixed(2);
   if (SM.$('target_price')) SM.$('target_price').value = p.targetPrice.toFixed(2);
+  if (SM.$('stop_strategy') && p.stopStrategy) SM.$('stop_strategy').value = p.stopStrategy;
 };
 
 // ---------- Realized R / MFE / MAE (rein clientseitig, aus bereits geladenen Daily-Kerzen) ----------
@@ -378,11 +465,24 @@ SM.initPositionTool = function () {
       if (timeUnix == null || price == null) return;
       const entryTimeUnix = SM._snapToBar(timeUnix);
       const seedRisk = SM._defaultSeedRisk(price);
+      const stopStrategy = (SM.$('stopStrategySelect') && SM.$('stopStrategySelect').value) || 'none';
+      const entryDateIso = new Date(entryTimeUnix * 1000).toISOString().slice(0, 10);
+      let stopPrice = price - seedRisk;
+      if (stopStrategy === 'fixed_ema10_prevday' || stopStrategy === 'fixed_ema20_prevday') {
+        const emaKey = stopStrategy === 'fixed_ema10_prevday' ? 'ema10' : 'ema20';
+        const emaVal = SM._dailyEmaValueBefore(emaKey, entryDateIso);
+        if (emaVal != null && emaVal < price) stopPrice = emaVal;
+      } else if (stopStrategy === 'close_below_ema10' || stopStrategy === 'close_below_ema20') {
+        const emaKey = stopStrategy === 'close_below_ema10' ? 'ema10' : 'ema20';
+        const emaVal = SM._dailyEmaValueAt(emaKey, entryDateIso);
+        if (emaVal != null && emaVal < price) stopPrice = emaVal;
+      }
+      const riskUnit = price - stopPrice;
       SM.position = {
         entryTimeUnix, entryPrice: price,
-        stopPrice: price - seedRisk, targetPrice: price + seedRisk * SM.DEFAULT_RR,
+        stopPrice, targetPrice: price + riskUnit * SM.DEFAULT_RR,
         exitTimeUnix: SM._defaultExitTimeUnix(entryTimeUnix), exitPrice: null, closedReason: null,
-        qty: SM.DEFAULT_QTY, dragging: 'stop',
+        stopStrategy, qty: SM.DEFAULT_QTY, dragging: 'stop',
       };
       const rects = SM._createPositionRects();
       SM.position.rectTarget = rects.rectTarget; SM.position.rectStop = rects.rectStop;

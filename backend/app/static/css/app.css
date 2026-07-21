@@ -125,6 +125,9 @@ main.layout{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px 1
 .metric-row .v.bad{color:var(--down)}
 .metric-row .v.dim{color:var(--muted-2);font-weight:400}
 .metrics-empty{color:var(--muted-2);font-size:12.5px;padding:8px 2px}
+.analysis-trade-table{max-height:340px;overflow-y:auto}
+.analysis-trade-table table{font-size:12px}
+.analysis-trade-table td{padding:4px 6px}
 
 .watchlist-add{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .watchlist-add input{flex:1;min-width:80px}

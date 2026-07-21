@@ -21,6 +21,7 @@ _SETUP_COLUMNS = {
     'stop_price': 'real',
     'target_price': 'real',
     'pivot_level_price': 'real',
+    'stop_strategy': 'text',
     'cutoff_timestamp': 'text',
     'was_playback_enforced': 'integer default 0',
     'data_status': 'text',

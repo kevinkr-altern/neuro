@@ -46,6 +46,7 @@ SM.loadTicker = async function (timeframe) {
     if (r.warnings && r.warnings.length) msg += '\nHinweise:\n- ' + r.warnings.join('\n- ');
     SM.setMsg(msg, r.warnings && r.warnings.length ? 'warn' : 'msg');
     SM.refreshMarketStateStrip();
+    SM.refreshMetricsForLastClose();
   } catch (e) { SM.showErr(e.message); SM.setMsg(''); }
 };
 
@@ -105,15 +106,20 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => SM.armMarker(btn.dataset.marker));
   });
 
+  // Zeichen-Werkzeug MUSS vor dem Positions-Werkzeug registriert werden:
+  // beide haengen mousedown an denselben Container, und nur wenn der
+  // Drawing-Handler zuerst laeuft, kann sein stopImmediatePropagation() beim
+  // Ziehen einer bestehenden Linie das Positions-Werkzeug zuverlaessig
+  // uebergehen (Registrierungsreihenfolge = Ausfuehrungsreihenfolge).
+  SM.initDrawingTool();
+  SM.$('btnDrawLine').addEventListener('click', SM.armDrawingTool);
+  SM.$('btnClearDrawings').addEventListener('click', SM.clearDrawings);
+
   SM.initPositionTool();
   SM.$('btnPositionTool').addEventListener('click', SM.armPositionTool);
   SM.$('btnClosePosition').addEventListener('click', SM.closePositionManually);
   SM.$('btnClearPosition').addEventListener('click', SM.clearPosition);
   SM.initMiniChart();
-
-  SM.initDrawingTool();
-  SM.$('btnDrawLine').addEventListener('click', SM.armDrawingTool);
-  SM.$('btnClearDrawings').addEventListener('click', SM.clearDrawings);
 
   chart.subscribeClick((param) => {
     if (SM.drawingArmed) return; // wird ueber rohes mousedown behandelt (siehe drawings.js)
@@ -145,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
     if (e.key === 'Escape') { SM.cancelPendingDrawing(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && SM._activeDrawing) { e.preventDefault(); SM.deleteActiveDrawing(); return; }
     // Schnelle Replay-Navigation per Pfeiltasten/Leertaste (nur bei aktivem Replay).
     if (SM.replay.active && SM.replay.revealIndex >= 0) {
       if (e.key === 'ArrowRight') { e.preventDefault(); SM.replayStep(); return; }
@@ -166,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const panelId = 'tab' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1);
       SM.$(panelId).classList.remove('hidden');
+      if (btn.dataset.tab === 'analysis') SM.loadAnalysis();
     });
   });
 

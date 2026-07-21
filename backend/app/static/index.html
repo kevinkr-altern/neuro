@@ -65,6 +65,13 @@
           <button data-marker="pivot" title="Taste P">P</button>
         </span>
         <button id="btnPositionTool" title="Position platzieren: klicken und im Chart ziehen">Position-Tool</button>
+        <select id="stopStrategySelect" title="Stopp-Strategie fuer die naechste platzierte Position">
+          <option value="none">Stop: manuell (ziehen)</option>
+          <option value="fixed_ema10_prevday">Stop: EMA10 Vortag (fest)</option>
+          <option value="close_below_ema10">Stop: Close &lt; EMA10</option>
+          <option value="fixed_ema20_prevday">Stop: EMA20 Vortag (fest)</option>
+          <option value="close_below_ema20">Stop: Close &lt; EMA20</option>
+        </select>
         <button id="btnClosePosition" class="btn-secondary" title="Position manuell am aktuellen Exit-Punkt schliessen">Trade schliessen</button>
         <button id="btnClearPosition" class="btn-secondary" title="Positions-Werkzeug entfernen">✕ Position</button>
         <button id="btnMarkSetup">Setup hier markieren</button>
@@ -73,7 +80,7 @@
         <span class="kbd-hint">Navigation: <kbd>←</kbd> <kbd>→</kbd> Schritt, <kbd>Leertaste</kbd> Play/Pause, Scrubber = schnell springen</span>
       </div>
     </div>
-    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken setzt Entry/Stop/Ziel (blaue Linie = Entry); Griffe am rechten Rand ziehen, um Stop/Ziel anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Der Trade schliesst automatisch, sobald eine aufgedeckte Kerze den Stop oder das Ziel beruehrt (oder manuell ueber "Trade schliessen"); danach Kennzahlen im Label-Tab pruefen und speichern - anschliessend kann direkt eine neue Position gesetzt werden. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20). "／ Linie" zeichnet eine freie Trendlinie (Start-/Endpunkt anklicken, ESC bricht ab). "▤ Minuten-Chart" oeffnet bei pausiertem D1-Replay einen zweiten, einklappbaren Chart mit den 5-Minuten-Kerzen dieses Tages (feinste verfuegbare Aufloesung - EODHD liefert kein echtes 1-Minuten-Intervall); ist der Tag dort durchgelaufen, springt der grosse Tages-Chart automatisch einen Tag weiter und der Minuten-Chart startet neu.</p>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken setzt Entry/Stop/Ziel (blaue Linie = Entry); Griffe am rechten Rand ziehen, um Stop/Ziel anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Der Trade schliesst automatisch, sobald eine aufgedeckte Kerze den Stop oder das Ziel beruehrt (oder manuell ueber "Trade schliessen"); danach Kennzahlen im Label-Tab pruefen und speichern - anschliessend kann direkt eine neue Position gesetzt werden. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20). "／ Linie" zeichnet eine freie Trendlinie (Start-/Endpunkt anklicken, ESC bricht ab); danach beide Endpunkte einzeln oder die ganze Linie (auf den Linienkoerper ziehen) verschiebbar, Entf/Backspace loescht die zuletzt beruehrte Linie. "▤ Minuten-Chart" oeffnet bei pausiertem D1-Replay einen zweiten, einklappbaren Chart mit den 5-Minuten-Kerzen dieses Tages (feinste verfuegbare Aufloesung - EODHD liefert kein echtes 1-Minuten-Intervall); ist der Tag dort durchgelaufen, springt der grosse Tages-Chart automatisch einen Tag weiter und der Minuten-Chart startet neu.</p>
 
     <div id="miniChartPanel" class="mini-chart-panel hidden">
       <div class="mini-chart-header">
@@ -102,6 +109,7 @@
       <button class="tab-btn active" data-tab="metrics">Kennzahlen</button>
       <button class="tab-btn" data-tab="label">Label</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
+      <button class="tab-btn" data-tab="analysis">Analyse</button>
     </div>
     <div class="tab-panel" id="tabMetrics">
       <div id="metrics" class="metrics-grid"></div>
@@ -119,6 +127,13 @@
       <label>Stop<input id="stop_price" type="number" step="0.01" size="7"></label>
       <label>Ziel<input id="target_price" type="number" step="0.01" size="7"></label>
       <label>Pivot<input id="pivot_level_price" type="number" step="0.01" size="7"></label><br>
+      <label>Stop-Strategie<select id="stop_strategy">
+        <option value="none">manuell</option>
+        <option value="fixed_ema10_prevday">EMA10 Vortag (fest)</option>
+        <option value="close_below_ema10">Close &lt; EMA10</option>
+        <option value="fixed_ema20_prevday">EMA20 Vortag (fest)</option>
+        <option value="close_below_ema20">Close &lt; EMA20</option>
+      </select></label><br>
       <textarea id="notes" placeholder="Freitextnotiz" rows="3"></textarea><br>
       <button id="btnSaveLabel">Label speichern</button>
       <button id="btnCancelLabel" class="btn-secondary">Abbrechen</button>
@@ -133,6 +148,10 @@
       </div>
       <div id="watchlistGroups"></div>
       <p class="hint">Ticker anklicken laedt ihn in den Chart. Kategorie frei eintippen (bereits verwendete werden vorgeschlagen).</p>
+    </div>
+    <div class="tab-panel hidden" id="tabAnalysis">
+      <div id="analysisContent" class="metrics-grid"></div>
+      <p class="hint">Wertet alle gespeicherten Labels aus (nur solche mit eingetragenem Ergebnis R). Aufschluesselung nach Stop-Strategie zeigt, welche Stop-Regel im Schnitt am besten abschneidet.</p>
     </div>
   </aside>
 </main>
@@ -170,6 +189,7 @@
 <script src="/static/js/marketstate.js"></script>
 <script src="/static/js/minervini.js"></script>
 <script src="/static/js/watchlist.js"></script>
+<script src="/static/js/analysis.js"></script>
 <script src="/static/js/settingspanel.js"></script>
 <script src="/static/js/app.js"></script>
 </body></html>
