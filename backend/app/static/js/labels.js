@@ -195,8 +195,6 @@ SM.fillMetricsTable = function () {
   SM.setReferenceLines([
     { price: m.pdh, color: '#8a8a2e', title: 'PDH' },
     { price: m.pdl, color: '#8a8a2e', title: 'PDL' },
-    { price: m.orb_m30_valid ? m.orb_m30_high : null, color: '#4dabf7', title: 'ORH m30' },
-    { price: m.orb_m30_valid ? m.orb_m30_low : null, color: '#4dabf7', title: 'ORL m30' },
   ]);
   SM.updateQuickStats();
 };
