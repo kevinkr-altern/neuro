@@ -1,0 +1,17 @@
+lightweight-charts.standalone.production.js
+Version: 5.2.0 (exact, pinned — do NOT swap for "latest")
+Source: https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js
+Vendored: 2026-07-20
+License: Apache License 2.0
+
+Warum vendored statt CDN zur Laufzeit: kein externes Laufzeit-Netzwerkziel,
+funktioniert genauso zuverlaessig wie der Rest der App (nur die Kursdaten
+selbst brauchen Internet, ueber EODHD). Version bewusst exakt gepinnt, weil
+ein vorheriger Vorfall in diesem Projekt durch eine ungepinnte "latest"-
+Version von lightweight-charts verursacht wurde (v5 entfernte
+chart.addCandlestickSeries(); die neue API ist
+chart.addSeries(LightweightCharts.CandlestickSeries, opts)).
+
+Bei einem bewussten Versions-Upgrade: Datei ersetzen, diese VERSION.txt
+aktualisieren, und die gesamte JS-Chart-Integration (backend/app/static/js/chart.js)
+gegen die neue API pruefen.

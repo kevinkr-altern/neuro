@@ -1,0 +1,195 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup-Miner</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/css/app.css">
+</head><body>
+<header class="topbar">
+  <div class="topbar-left">
+    <input id="ticker" value="NVDA" placeholder="Ticker" size="8" autocomplete="off">
+    <button id="btnLoad">Laden</button>
+    <div class="tf-group" id="tfGroup">
+      <button data-tf="5m">M5</button>
+      <button data-tf="15m">M15</button>
+      <button data-tf="30m">M30</button>
+      <button data-tf="1h">H1</button>
+      <button data-tf="1d" class="active">D1</button>
+      <button data-tf="1w">W1</button>
+    </div>
+    <div class="tf-group" id="rangeGroup" title="Zeitraum (nur fuer D1/W1)">
+      <button data-range="ytd">Lfd. Jahr</button>
+      <button data-range="1y">1J</button>
+      <button data-range="3y" class="active">3J</button>
+      <button data-range="5y">5J</button>
+      <button data-range="max">Max</button>
+    </div>
+    <span id="m5Badge" class="badge">M5 ab: —</span>
+  </div>
+  <div class="topbar-right">
+    <button id="btnDrawLine" title="Freie Linie zeichnen: Start- und Endpunkt anklicken, ESC bricht ab">／ Linie</button>
+    <button id="btnClearDrawings" class="btn-secondary" title="Alle Zeichnungen entfernen">✕ Linien</button>
+    <button id="btnReplayToggle">Replay aktivieren</button>
+    <button id="btnSettings" title="Chart-Stil aendern">⚙</button>
+    <div id="settingsPanel" class="settings-panel hidden"></div>
+  </div>
+</header>
+
+<div class="notices"><div id="banner"></div><div id="err"></div><div id="msg"></div></div>
+
+<main class="layout">
+  <section class="chart-col">
+    <div id="chartContainer" class="chart-container">
+      <div id="chartLegend" class="chart-legend"></div>
+      <div id="quickStats" class="quick-stats"></div>
+    </div>
+    <div id="replayBar" class="replay-bar hidden">
+      <div class="replay-row">
+        <button id="replayStepBack" class="icon-btn" title="Ein Schritt zurueck (Pfeil links)">⏮</button>
+        <button id="replayPlay" class="icon-btn primary" title="Play/Pause (Leertaste)">▶</button>
+        <button id="replayStep" class="icon-btn" title="Ein Schritt vorwaerts (Pfeil rechts)">⏭</button>
+        <input id="replayScrub" class="replay-scrub" type="range" min="0" max="0" value="0" title="Schnell springen">
+        <span id="replayCount" class="replay-count"></span>
+        <select id="replaySpeed" title="Geschwindigkeit">
+          <option value="2000">0.5x</option>
+          <option value="1000" selected>1x</option>
+          <option value="500">2x</option>
+          <option value="250">4x</option>
+          <option value="125">8x</option>
+        </select>
+        <span id="replayPos" class="replay-pos"></span>
+      </div>
+      <div class="replay-row tools">
+        <span class="marker-toggle">
+          Marker:
+          <button data-marker="entry" title="Taste E">E</button>
+          <button data-marker="exit" title="Taste X">X</button>
+          <button data-marker="stop" title="Taste S">S</button>
+          <button data-marker="pivot" title="Taste P">P</button>
+        </span>
+        <button id="btnPositionTool" title="Position platzieren: klicken und im Chart ziehen">Position-Tool</button>
+        <select id="stopStrategySelect" title="Stopp-Strategie fuer die naechste platzierte Position">
+          <option value="none">Stop: manuell (ziehen)</option>
+          <option value="fixed_ema10_prevday">Stop: EMA10 Vortag (fest)</option>
+          <option value="close_below_ema10">Stop: Close &lt; EMA10</option>
+          <option value="fixed_ema20_prevday">Stop: EMA20 Vortag (fest)</option>
+          <option value="close_below_ema20">Stop: Close &lt; EMA20</option>
+        </select>
+        <button id="btnClosePosition" class="btn-secondary" title="Position manuell am aktuellen Exit-Punkt schliessen">Trade schliessen</button>
+        <button id="btnClearPosition" class="btn-secondary" title="Positions-Werkzeug entfernen">✕ Position</button>
+        <button id="btnMarkSetup">Setup hier markieren</button>
+        <button id="btnBackToDaily" class="hidden btn-secondary" title="Zurueck zum Tages-Chart">← Tages-Chart</button>
+        <button id="btnOpenMiniChart" class="btn-secondary" title="Minuten-Chart fuer den aktuell pausierten Tag oeffnen (D1, Replay pausiert)">▤ Minuten-Chart</button>
+        <span class="kbd-hint">Navigation: <kbd>←</kbd> <kbd>→</kbd> Schritt, <kbd>Leertaste</kbd> Play/Pause, Scrubber = schnell springen</span>
+      </div>
+    </div>
+    <p class="hint">Replay: Kerze anklicken = Startpunkt. Doppelklick auf eine Tageskerze waehrend Replay = Drilldown in den Intraday-Chart dieses Tages mit ORB-Baendern (M5/M15/M30). Beim Zeitebenen-Wechsel bleibt die Replay-Position (echter Zeitpunkt) erhalten. Pfeiltasten E/X/S/P setzen einen Marker auf die aktuelle Replay-Position. Position-Tool: klicken setzt Entry/Stop/Ziel (blaue Linie = Entry); Griffe am rechten Rand ziehen, um Stop/Ziel anzupassen - beim Ziehen erscheint das jeweils erreichte ORB-Durchbruch-R. Der Trade schliesst automatisch, sobald eine aufgedeckte Kerze den Stop oder das Ziel beruehrt (oder manuell ueber "Trade schliessen"); danach Kennzahlen im Label-Tab pruefen und speichern - anschliessend kann direkt eine neue Position gesetzt werden. Bläulich hinterlegte Bereiche im M5-Chart sind Vor-/Nachboerse. Der duenne Streifen oben im Chart zeigt den QQQ-Kurztrend (gruen/gelb/rot nach EMA10/EMA20). "／ Linie" zeichnet eine freie Trendlinie (Start-/Endpunkt anklicken, ESC bricht ab); danach beide Endpunkte einzeln oder die ganze Linie (auf den Linienkoerper ziehen) verschiebbar, Entf/Backspace loescht die zuletzt beruehrte Linie. "▤ Minuten-Chart" oeffnet bei pausiertem D1-Replay einen zweiten, einklappbaren Chart mit den 5-Minuten-Kerzen dieses Tages (feinste verfuegbare Aufloesung - EODHD liefert kein echtes 1-Minuten-Intervall); ist der Tag dort durchgelaufen, springt der grosse Tages-Chart automatisch einen Tag weiter und der Minuten-Chart startet neu.</p>
+
+    <div id="miniChartPanel" class="mini-chart-panel hidden">
+      <div class="mini-chart-header">
+        <span>Minuten-Chart: <b id="miniChartDate">–</b></span>
+        <div class="mini-controls">
+          <div class="tf-group" id="miniTfGroup">
+            <button data-mini-tf="5m" class="active">M5</button>
+            <button data-mini-tf="15m">M15</button>
+            <button data-mini-tf="30m">M30</button>
+          </div>
+          <button id="miniStepBack" class="icon-btn" title="Schritt zurueck">⏮</button>
+          <button id="miniPlay" class="icon-btn primary" title="Play/Pause">▶</button>
+          <button id="miniStep" class="icon-btn" title="Schritt vorwaerts">⏭</button>
+          <input id="miniScrub" class="replay-scrub" type="range" min="0" max="0" value="0" title="Schnell springen">
+          <span id="miniCount" class="replay-count"></span>
+          <button id="btnMiniCollapse" class="btn-secondary" title="Einklappen/Ausklappen">▾</button>
+          <button id="btnMiniClose" class="btn-secondary" title="Minuten-Chart schliessen">✕</button>
+        </div>
+      </div>
+      <div id="miniChartContainer" class="mini-chart-container"></div>
+    </div>
+  </section>
+
+  <aside class="sidebar">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="metrics">Kennzahlen</button>
+      <button class="tab-btn" data-tab="label">Label</button>
+      <button class="tab-btn" data-tab="watchlist">Watchlist</button>
+      <button class="tab-btn" data-tab="analysis">Analyse</button>
+    </div>
+    <div class="tab-panel" id="tabMetrics">
+      <div id="metrics" class="metrics-grid"></div>
+    </div>
+    <div class="tab-panel hidden" id="tabLabel">
+      <p><b>Name:</b> <span id="setupName" class="ok"></span></p>
+      <div id="form"></div>
+      <label>Level<select id="level_name" onchange="SM.nameIt()"></select></label>
+      <label>Orderly 1–5<input id="orderly_rating" type="number" min="1" max="5" value="4" size="3"></label>
+      <label>Ergebnis R<input id="result_r" type="number" step="0.1" size="5"></label>
+      <label><input id="result_is_hypothetical" type="checkbox"> hypothetisch</label>
+      <label>MFE<input id="mfe_r" type="number" step="0.1" size="5"></label>
+      <label>MAE<input id="mae_r" type="number" step="0.1" size="5"></label>
+      <label>Entry-Preis<input id="entry_price" type="number" step="0.01" size="7"></label>
+      <label>Stop<input id="stop_price" type="number" step="0.01" size="7"></label>
+      <label>Ziel<input id="target_price" type="number" step="0.01" size="7"></label>
+      <label>Pivot<input id="pivot_level_price" type="number" step="0.01" size="7"></label><br>
+      <label>Stop-Strategie<select id="stop_strategy">
+        <option value="none">manuell</option>
+        <option value="fixed_ema10_prevday">EMA10 Vortag (fest)</option>
+        <option value="close_below_ema10">Close &lt; EMA10</option>
+        <option value="fixed_ema20_prevday">EMA20 Vortag (fest)</option>
+        <option value="close_below_ema20">Close &lt; EMA20</option>
+      </select></label><br>
+      <textarea id="notes" placeholder="Freitextnotiz" rows="3"></textarea><br>
+      <button id="btnSaveLabel">Label speichern</button>
+      <button id="btnCancelLabel" class="btn-secondary">Abbrechen</button>
+      <p class="hint">Ergebnis/MFE/MAE werden gespeichert, aber laut Datenpolitik nicht als Modell-Input verwendet. "Setup hier markieren" im Replay laedt zuerst die Look-ahead-sicheren Kennzahlen fuer diesen Zeitpunkt. "Abbrechen" verwirft nur den noch ungespeicherten Entwurf; bereits gespeicherte Labels loescht du über das ✕ in der Tabelle "Letzte Labels".</p>
+    </div>
+    <div class="tab-panel hidden" id="tabWatchlist">
+      <div class="watchlist-add">
+        <input id="wlTicker" placeholder="Ticker" size="8" autocomplete="off">
+        <input id="wlCategory" placeholder="Kategorie (z.B. Prime)" list="wlCategoryList" autocomplete="off">
+        <datalist id="wlCategoryList"></datalist>
+        <button id="btnWlAdd">+ Hinzufuegen</button>
+      </div>
+      <div id="watchlistGroups"></div>
+      <p class="hint">Ticker anklicken laedt ihn in den Chart. Kategorie frei eintippen (bereits verwendete werden vorgeschlagen).</p>
+    </div>
+    <div class="tab-panel hidden" id="tabAnalysis">
+      <div id="analysisContent" class="metrics-grid"></div>
+      <p class="hint">Wertet alle gespeicherten Labels aus (nur solche mit eingetragenem Ergebnis R). Aufschluesselung nach Stop-Strategie zeigt, welche Stop-Regel im Schnitt am besten abschneidet.</p>
+    </div>
+  </aside>
+</main>
+
+<details class="panel secondary">
+  <summary>CSV-Import / Export / Backup</summary>
+  <input id="csv" type="file" accept=".csv">
+  <button id="btnImportCsv">CSV importieren</button>
+  <a href="/api/exports/labels.csv" target="_blank">Labels CSV</a>
+  <a href="/api/exports/labels.json" target="_blank">Labels JSON</a>
+  <button id="btnBackup">Backup erstellen</button>
+  <button id="btnListBackups">Backups anzeigen</button>
+  <span id="backups"></span>
+  <p class="hint">Pflichtspalten: ticker, entry_date, label_class, structure, trigger, tactic. Datum als JJJJ-MM-TT oder TT.MM.JJJJ; Komma als Dezimaltrenner erlaubt.</p>
+</details>
+
+<details class="panel secondary" open>
+  <summary>Letzte Labels</summary>
+  <table><tbody id="labels"></tbody></table>
+</details>
+
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/chart.js"></script>
+<script src="/static/js/chartprimitives.js"></script>
+<script src="/static/js/drawings.js"></script>
+<script src="/static/js/orb.js"></script>
+<script src="/static/js/positiontool.js"></script>
+<script src="/static/js/replay.js"></script>
+<script src="/static/js/markers.js"></script>
+<script src="/static/js/labels.js"></script>
+<script src="/static/js/importexport.js"></script>
+<script src="/static/js/drilldown.js"></script>
+<script src="/static/js/minichart.js"></script>
+<script src="/static/js/marketstate.js"></script>
+<script src="/static/js/minervini.js"></script>
+<script src="/static/js/watchlist.js"></script>
+<script src="/static/js/analysis.js"></script>
+<script src="/static/js/settingspanel.js"></script>
+<script src="/static/js/app.js"></script>
+</body></html>

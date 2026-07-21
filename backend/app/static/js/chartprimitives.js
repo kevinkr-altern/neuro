@@ -1,0 +1,187 @@
+// Wiederverwendbare Lightweight-Charts-v5-Primitive (ISeriesPrimitive) fuer
+// Rechtecke und volle-Pane-Hoehe-Baender. API exakt gegen das vendorte
+// v5.2.0-typings.d.ts geprueft (series.attachPrimitive/detachPrimitive,
+// paneViews()->{zOrder,renderer:{draw(target)}}, attached({chart,series,
+// requestUpdate}), Koordinaten ueber series.priceToCoordinate() /
+// chart.timeScale().timeToCoordinate(), Canvas-Zeichnen ueber
+// target.useBitmapCoordinateSpace()) - keine geratenen Methodennamen.
+var SM = window.SM = window.SM || {};
+
+// Preis- UND zeitbegrenztes Rechteck (fuer die Positions-Box: Zielzone/Stopzone).
+SM.RectPrimitive = function (opts) {
+  this._opts = Object.assign({ fillColor: 'rgba(0,0,0,0.2)', borderColor: null, borderWidth: 1 }, opts);
+  this._chart = null; this._series = null; this._requestUpdate = null;
+};
+SM.RectPrimitive.prototype.attached = function (param) {
+  this._chart = param.chart; this._series = param.series; this._requestUpdate = param.requestUpdate;
+};
+SM.RectPrimitive.prototype.detached = function () { this._chart = null; this._series = null; };
+SM.RectPrimitive.prototype.updateAllViews = function () {};
+SM.RectPrimitive.prototype.setBounds = function (timeFrom, timeTo, priceFrom, priceTo) {
+  this._opts.timeFrom = timeFrom; this._opts.timeTo = timeTo;
+  this._opts.priceFrom = priceFrom; this._opts.priceTo = priceTo;
+  if (this._requestUpdate) this._requestUpdate();
+};
+SM.RectPrimitive.prototype.paneViews = function () {
+  var self = this;
+  return [{
+    zOrder: function () { return 'bottom'; },
+    renderer: function () {
+      return {
+        draw: function (target) {
+          var o = self._opts;
+          if (!self._chart || !self._series || o.priceFrom == null || o.priceTo == null || o.timeFrom == null || o.timeTo == null) return;
+          var ts = self._chart.timeScale();
+          var x1 = ts.timeToCoordinate(o.timeFrom);
+          var x2 = ts.timeToCoordinate(o.timeTo);
+          var y1 = self._series.priceToCoordinate(o.priceFrom);
+          var y2 = self._series.priceToCoordinate(o.priceTo);
+          if (x1 == null || x2 == null || y1 == null || y2 == null) return;
+          target.useBitmapCoordinateSpace(function (scope) {
+            var ctx = scope.context;
+            var rx1 = Math.round(x1 * scope.horizontalPixelRatio), rx2 = Math.round(x2 * scope.horizontalPixelRatio);
+            var ry1 = Math.round(y1 * scope.verticalPixelRatio), ry2 = Math.round(y2 * scope.verticalPixelRatio);
+            var left = Math.min(rx1, rx2), width = Math.max(1, Math.abs(rx2 - rx1));
+            var top = Math.min(ry1, ry2), height = Math.max(1, Math.abs(ry2 - ry1));
+            ctx.fillStyle = o.fillColor;
+            ctx.fillRect(left, top, width, height);
+            if (o.borderColor) {
+              ctx.strokeStyle = o.borderColor;
+              ctx.lineWidth = (o.borderWidth || 1) * scope.horizontalPixelRatio;
+              ctx.strokeRect(left, top, width, height);
+            }
+          });
+        },
+      };
+    },
+  }];
+};
+
+// Duenner, pixelhoher Streifen am oberen Rand der Pane, aus mehreren farbigen
+// Zeit-Segmenten in EINEM Primitive (statt vieler Einzel-Primitives - fuer den
+// QQQ-Marktzustand-Strich, der pro Kerze eine eigene Farbe haben kann).
+SM.TopStripPrimitive = function (opts) {
+  this._opts = Object.assign({ heightPx: 4 }, opts);
+  this._segments = [];
+  this._chart = null; this._requestUpdate = null;
+};
+SM.TopStripPrimitive.prototype.attached = function (param) {
+  this._chart = param.chart; this._requestUpdate = param.requestUpdate;
+};
+SM.TopStripPrimitive.prototype.detached = function () { this._chart = null; };
+SM.TopStripPrimitive.prototype.updateAllViews = function () {};
+SM.TopStripPrimitive.prototype.setSegments = function (segments) {
+  this._segments = segments || [];
+  if (this._requestUpdate) this._requestUpdate();
+};
+SM.TopStripPrimitive.prototype.paneViews = function () {
+  var self = this;
+  return [{
+    zOrder: function () { return 'top'; },
+    renderer: function () {
+      return {
+        draw: function (target) {
+          if (!self._chart || !self._segments.length) return;
+          var ts = self._chart.timeScale();
+          target.useBitmapCoordinateSpace(function (scope) {
+            var ctx = scope.context;
+            var h = Math.max(1, Math.round(self._opts.heightPx * scope.verticalPixelRatio));
+            for (var i = 0; i < self._segments.length; i++) {
+              var seg = self._segments[i];
+              var x1 = ts.timeToCoordinate(seg.timeFrom);
+              var x2 = ts.timeToCoordinate(seg.timeTo);
+              if (x1 == null || x2 == null) continue;
+              var rx1 = Math.round(x1 * scope.horizontalPixelRatio), rx2 = Math.round(x2 * scope.horizontalPixelRatio);
+              var left = Math.min(rx1, rx2), width = Math.max(1, Math.abs(rx2 - rx1));
+              ctx.fillStyle = seg.color;
+              ctx.fillRect(left, 0, width, h);
+            }
+          });
+        },
+      };
+    },
+  }];
+};
+
+// Freie Linie zwischen zwei (Zeit,Preis)-Punkten (fuer das Zeichen-Werkzeug -
+// Trendlinien u.ae., unabhaengig vom Kerzenraster).
+SM.LineSegmentPrimitive = function (opts) {
+  this._opts = Object.assign({ color: '#5b9bff', width: 2 }, opts);
+  this._chart = null; this._series = null; this._requestUpdate = null;
+};
+SM.LineSegmentPrimitive.prototype.attached = function (param) {
+  this._chart = param.chart; this._series = param.series; this._requestUpdate = param.requestUpdate;
+};
+SM.LineSegmentPrimitive.prototype.detached = function () { this._chart = null; this._series = null; };
+SM.LineSegmentPrimitive.prototype.updateAllViews = function () {};
+SM.LineSegmentPrimitive.prototype.setPoints = function (t1, p1, t2, p2) {
+  this._opts.t1 = t1; this._opts.p1 = p1; this._opts.t2 = t2; this._opts.p2 = p2;
+  if (this._requestUpdate) this._requestUpdate();
+};
+SM.LineSegmentPrimitive.prototype.paneViews = function () {
+  var self = this;
+  return [{
+    zOrder: function () { return 'top'; },
+    renderer: function () {
+      return {
+        draw: function (target) {
+          var o = self._opts;
+          if (!self._chart || !self._series || o.t1 == null || o.t2 == null || o.p1 == null || o.p2 == null) return;
+          var ts = self._chart.timeScale();
+          var x1 = ts.timeToCoordinate(o.t1), x2 = ts.timeToCoordinate(o.t2);
+          var y1 = self._series.priceToCoordinate(o.p1), y2 = self._series.priceToCoordinate(o.p2);
+          if (x1 == null || x2 == null || y1 == null || y2 == null) return;
+          target.useBitmapCoordinateSpace(function (scope) {
+            var ctx = scope.context;
+            ctx.strokeStyle = o.color;
+            ctx.lineWidth = (o.width || 2) * scope.horizontalPixelRatio;
+            ctx.beginPath();
+            ctx.moveTo(x1 * scope.horizontalPixelRatio, y1 * scope.verticalPixelRatio);
+            ctx.lineTo(x2 * scope.horizontalPixelRatio, y2 * scope.verticalPixelRatio);
+            ctx.stroke();
+          });
+        },
+      };
+    },
+  }];
+};
+
+// Nur zeitbegrenztes Band ueber die volle Pane-Hoehe (fuer ORB-Fenster).
+SM.VerticalBandPrimitive = function (opts) {
+  this._opts = Object.assign({ fillColor: 'rgba(255,255,255,0.05)' }, opts);
+  this._chart = null; this._requestUpdate = null;
+};
+SM.VerticalBandPrimitive.prototype.attached = function (param) {
+  this._chart = param.chart; this._requestUpdate = param.requestUpdate;
+};
+SM.VerticalBandPrimitive.prototype.detached = function () { this._chart = null; };
+SM.VerticalBandPrimitive.prototype.updateAllViews = function () {};
+SM.VerticalBandPrimitive.prototype.setRange = function (timeFrom, timeTo) {
+  this._opts.timeFrom = timeFrom; this._opts.timeTo = timeTo;
+  if (this._requestUpdate) this._requestUpdate();
+};
+SM.VerticalBandPrimitive.prototype.paneViews = function () {
+  var self = this;
+  return [{
+    zOrder: function () { return 'bottom'; },
+    renderer: function () {
+      return {
+        draw: function (target) {
+          var o = self._opts;
+          if (!self._chart || o.timeFrom == null || o.timeTo == null) return;
+          var ts = self._chart.timeScale();
+          var x1 = ts.timeToCoordinate(o.timeFrom);
+          var x2 = ts.timeToCoordinate(o.timeTo);
+          if (x1 == null || x2 == null) return;
+          target.useBitmapCoordinateSpace(function (scope) {
+            var ctx = scope.context;
+            var rx1 = Math.round(x1 * scope.horizontalPixelRatio), rx2 = Math.round(x2 * scope.horizontalPixelRatio);
+            var left = Math.min(rx1, rx2), width = Math.max(1, Math.abs(rx2 - rx1));
+            ctx.fillStyle = o.fillColor;
+            ctx.fillRect(left, 0, width, scope.bitmapSize.height);
+          });
+        },
+      };
+    },
+  }];
+};

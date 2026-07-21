@@ -1,14 +1,14 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {createChart, CandlestickData, ColorType, IChartApi, ISeriesApi, LineData, SeriesMarker, Time, LineStyle} from 'lightweight-charts';
+import {createChart, CandlestickData, ColorType, IChartApi, ISeriesApi, LineData, SeriesMarker, Time} from 'lightweight-charts';
 import {api, BASE} from './api/client';
 import './style.css';
 
 type Timeframe='5m'|'15m'|'30m'|'1h'|'daily'|'weekly';
 type Bar={time?:string;date?:string;open:number;high:number;low:number;close:number;volume:number;ema10?:number;ema20?:number;sma50?:number;sma100?:number;sma200?:number};
 type TradeStatus='draft'|'open'|'closed';
-type StopStrategy='manual'|'first_candle_low'|'entry_candle_low'|'fixed_percent'|'atr_multiple'|'ema10_trail';
-type Trade={id:string;status:TradeStatus;entryTime?:string;entryPrice?:number;exitTime?:string;exitPrice?:number;stopPrice?:number;targetPrice?:number;riskPerShare?:number;resultR?:number;stopStrategy:StopStrategy;fixedPercent:number;atrMultiple:number;trailActive?:boolean;stopoutReason?:string};
+type StopStrategy='manual'|'first_candle_low'|'entry_candle_low'|'fixed_percent'|'atr_multiple';
+type Trade={id:string;status:TradeStatus;entryTime?:string;entryPrice?:number;exitTime?:string;exitPrice?:number;stopPrice?:number;targetPrice?:number;riskPerShare?:number;resultR?:number;stopStrategy:StopStrategy;fixedPercent:number;atrMultiple:number};
 type MarkerDraft={marker_type:string; timestamp:string; price:number; timeframe:string; note?:string};
 
 type ChartRefs={chart:IChartApi;candles:ISeriesApi<'Candlestick'>;ema10:ISeriesApi<'Line'>;ema20:ISeriesApi<'Line'>;sma50:ISeriesApi<'Line'>;sma200:ISeriesApi<'Line'>;volume:ISeriesApi<'Histogram'>};
@@ -43,14 +43,10 @@ function App(){
   const [form,setForm]=useState<any>({structure:'Pullback',trigger:'EMA-Reclaim',tactic:'ORB m30',level_name:'ORH m30',orderly_rating:4,label_class:'Gut',result_is_hypothetical:false});
   const chartEl=useRef<HTMLDivElement>(null);
   const refs=useRef<ChartRefs|null>(null);
-  const [pnlLabel,setPnlLabel]=useState({x:160,y:90});
-  const [drag,setDrag]=useState<null|'box'|'entry'|'stop'|'target'|'exit'|'pnl'>(null);
 
   const selectedBar=selected>=0?bars[selected]:undefined;
   const firstCandle = ['5m','15m','30m'].includes(tf) && bars.length ? bars[0] : undefined;
   const setupName=`${form.structure} / ${form.trigger} / ${form.tactic} @ ${form.level_name || 'Level offen'}`;
-  const priceRange=useMemo(()=>{const ps=bars.flatMap(b=>[b.high,b.low,trade.entryPrice,trade.stopPrice,trade.targetPrice,trade.exitPrice].filter((x):x is number=>typeof x==='number')); const hi=Math.max(...ps,1); const lo=Math.min(...ps,0); return {hi,lo,pad:(hi-lo||1)*0.08}},[bars,trade]);
-  const tradeBoxGeom=useMemo(()=>tradeGeometry(),[bars,trade,priceRange]);
 
   useEffect(()=>{refreshSettings()},[]);
   useEffect(()=>{renderChart()},[bars,selected,tf,trade,lines]);
@@ -68,33 +64,6 @@ function App(){
   }
   async function selectBar(index:number){setSelected(index); if(tf==='daily'||tf==='weekly'){try{const r=await api('/charts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker,date,timeframe:tf,selected_index:index})}); setMetrics(r.metrics||{})}catch{}}}
   async function checkM5(){try{const r=await api('/availability/m5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker,entry_date:date})});setMessage(`${r.available?'OK':'FEHLT'} ${r.symbol} ${r.date}: ${r.message}; M15/M30/H1 ableitbar: ${r.available?'ja':'nein'}`)}catch(e:any){setError(e.message)}}
-
-
-  function indexOfTime(t?:string){return t?bars.findIndex(b=>tOf(b)===t):-1}
-  function xForIndex(i:number){return 64 + Math.max(0,i) * Math.max(4, ((chartEl.current?.clientWidth||900)-138)/Math.max(1,bars.length-1))}
-  function yForPrice(price?:number){if(price===undefined)return 0; const h=chartEl.current?.clientHeight||620; const hi=priceRange.hi+priceRange.pad; const lo=priceRange.lo-priceRange.pad; return 24 + (hi-price)/(hi-lo||1)*(h-104)}
-  function priceForY(y:number){const h=chartEl.current?.clientHeight||620; const hi=priceRange.hi+priceRange.pad; const lo=priceRange.lo-priceRange.pad; return hi - ((y-24)/(h-104))*(hi-lo)}
-  function timeForX(x:number){const w=chartEl.current?.clientWidth||900; const idx=Math.max(0,Math.min(bars.length-1,Math.round((x-64)/Math.max(4,(w-138)/Math.max(1,bars.length-1))))); return bars[idx]}
-  function tradeGeometry(){
-    if(!trade.entryPrice||!trade.entryTime)return null;
-    const entryIdx=indexOfTime(trade.entryTime); const exitIdx=trade.exitTime?indexOfTime(trade.exitTime):bars.length-1;
-    const left=xForIndex(entryIdx); const right=xForIndex(Math.max(entryIdx, exitIdx)); const entryY=yForPrice(trade.entryPrice); const stopY=yForPrice(trade.stopPrice); const targetY=yForPrice(trade.targetPrice);
-    return {left,right,width:Math.max(8,right-left),entryY,stopY,targetY,top:targetY||entryY,bottom:stopY||entryY};
-  }
-  function computeEmaTrail(next:Trade){
-    if(next.stopStrategy!=='ema10_trail'||!next.entryTime||!next.entryPrice||!next.stopPrice)return next;
-    const entryIdx=indexOfTime(next.entryTime); if(entryIdx<0)return next;
-    let activeStop=next.stopPrice; let trailActive=false;
-    for(let i=entryIdx+1;i<bars.length;i++){
-      const b=bars[i]; const ema=typeof b.ema10==='number'?b.ema10:undefined;
-      if(!trailActive && ema!==undefined && ema>next.entryPrice && b.close>next.entryPrice) trailActive=true;
-      if(trailActive && ema!==undefined) activeStop=Math.max(activeStop, ema);
-      if(b.low<=activeStop){
-        return updateResult({...next,exitTime:tOf(b),exitPrice:activeStop,stopPrice:activeStop,status:'closed',trailActive,stopoutReason:trailActive?'EMA10 Trail Stop':'Initial Stop'});
-      }
-    }
-    return updateResult({...next,stopPrice:activeStop,trailActive,status:next.exitPrice?'closed':'open'});
-  }
 
   function renderChart(){
     if(!chartEl.current)return;
@@ -117,14 +86,14 @@ function App(){
     if(trade.exitTime) chartMarkers.push({time:Math.floor(new Date(trade.exitTime).getTime()/1000) as Time,position:'aboveBar',color:'#ef5350',shape:'arrowDown',text:'EXIT'});
     candles.setMarkers(chartMarkers);
     if(firstCandle){
-      candles.createPriceLine({price:firstCandle.high,color:'#26a69a',lineWidth:2,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:`${tf.toUpperCase()} 1. Kerze High`});
-      candles.createPriceLine({price:firstCandle.low,color:'#ef5350',lineWidth:2,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:`${tf.toUpperCase()} 1. Kerze Low`});
+      candles.createPriceLine({price:firstCandle.high,color:'#26a69a',lineWidth:2,lineStyle:2,axisLabelVisible:true,title:`${tf.toUpperCase()} 1. Kerze High`});
+      candles.createPriceLine({price:firstCandle.low,color:'#ef5350',lineWidth:2,lineStyle:2,axisLabelVisible:true,title:`${tf.toUpperCase()} 1. Kerze Low`});
     }
-    if(trade.entryPrice) candles.createPriceLine({price:trade.entryPrice,color:'#26a69a',lineWidth:2,lineStyle:LineStyle.Solid,axisLabelVisible:true,title:'Entry'});
-    if(trade.stopPrice) candles.createPriceLine({price:trade.stopPrice,color:'#ef5350',lineWidth:2,lineStyle:LineStyle.Solid,axisLabelVisible:true,title:'Stop'});
-    if(trade.targetPrice) candles.createPriceLine({price:trade.targetPrice,color:'#ab47bc',lineWidth:2,lineStyle:LineStyle.Dotted,axisLabelVisible:true,title:'Target'});
-    if(trade.exitPrice) candles.createPriceLine({price:trade.exitPrice,color:'#f6c343',lineWidth:2,lineStyle:LineStyle.Solid,axisLabelVisible:true,title:'Exit'});
-    lines.forEach(l=>candles.createPriceLine({price:l.price,color:'#f6c343',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:l.note||'Level'}));
+    if(trade.entryPrice) candles.createPriceLine({price:trade.entryPrice,color:'#26a69a',lineWidth:2,lineStyle:0,axisLabelVisible:true,title:'Entry'});
+    if(trade.stopPrice) candles.createPriceLine({price:trade.stopPrice,color:'#ef5350',lineWidth:2,lineStyle:0,axisLabelVisible:true,title:'Stop'});
+    if(trade.targetPrice) candles.createPriceLine({price:trade.targetPrice,color:'#ab47bc',lineWidth:2,lineStyle:1,axisLabelVisible:true,title:'Target'});
+    if(trade.exitPrice) candles.createPriceLine({price:trade.exitPrice,color:'#f6c343',lineWidth:2,lineStyle:0,axisLabelVisible:true,title:'Exit'});
+    lines.forEach(l=>candles.createPriceLine({price:l.price,color:'#f6c343',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:l.note||'Level'}));
     chart.subscribeClick(param=>{if(!param.time)return; const idx=bars.findIndex(b=>toTime(b)===param.time); if(idx>=0) {selectBar(idx); handleChartAction(bars[idx]);}});
     chart.timeScale().fitContent(); refs.current={chart,candles,ema10,ema20,sma50,sma200,volume};
   }
@@ -134,7 +103,6 @@ function App(){
     if(strategy==='entry_candle_low') return b.low;
     if(strategy==='fixed_percent') return entry*(1-(trade.fixedPercent||3)/100);
     if(strategy==='atr_multiple') return metrics.atr14_dollars ? entry-(metrics.atr14_dollars*(trade.atrMultiple||1)) : undefined;
-    if(strategy==='ema10_trail') return trade.stopPrice || firstCandle?.low || b.low;
     return trade.stopPrice;
   }
   function updateResult(next:Trade){
@@ -145,13 +113,13 @@ function App(){
   function handleChartAction(b:Bar){
     if(tool==='entry'){
       const entry=b.close; const stop=stopFor(trade.stopStrategy,b,entry);
-      setTrade(computeEmaTrail(updateResult({...trade,entryTime:tOf(b),entryPrice:entry,stopPrice:stop,status:'open'})));
+      setTrade(updateResult({...trade,entryTime:tOf(b),entryPrice:entry,stopPrice:stop,status:'open'}));
     } else if(tool==='exit') {
       setTrade(updateResult({...trade,exitTime:tOf(b),exitPrice:b.close,status:'closed'}));
     } else if(tool==='stop') {
-      setTrade(computeEmaTrail(updateResult({...trade,stopPrice:b.close})));
+      setTrade(updateResult({...trade,stopPrice:b.close}));
     } else if(tool==='target') {
-      setTrade(computeEmaTrail(updateResult({...trade,targetPrice:b.close})));
+      setTrade(updateResult({...trade,targetPrice:b.close}));
     } else if(tool==='line') {
       setLines([...lines,{marker_type:'line',timestamp:tOf(b),price:b.close,timeframe:tf,note:'Level'}]);
     }
@@ -165,7 +133,7 @@ function App(){
     if(entry && entryBar){
       const currentTrade = trade;
       const nextStop = strategy==='first_candle_low' ? firstCandle?.low : strategy==='entry_candle_low' ? entryBar.low : strategy==='fixed_percent' ? entry*(1-fixedPercent/100) : strategy==='atr_multiple' && metrics.atr14_dollars ? entry-(metrics.atr14_dollars*atrMultiple) : currentTrade.stopPrice;
-      setTrade(computeEmaTrail(updateResult({...temp, stopPrice: nextStop})));
+      setTrade(updateResult({...temp, stopPrice: nextStop}));
     } else {
       setTrade(temp);
     }
@@ -188,25 +156,13 @@ function App(){
     }catch(e:any){setError(e.message)}
   }
 
-
-  function onOverlayMove(e:React.MouseEvent){
-    if(!drag||!tradeBoxGeom)return;
-    const rect=chartEl.current?.getBoundingClientRect(); if(!rect)return;
-    const x=e.clientX-rect.left; const y=e.clientY-rect.top;
-    if(drag==='pnl'){setPnlLabel({x,y}); return;}
-    if(drag==='stop') setTrade(computeEmaTrail(updateResult({...trade,stopPrice:priceForY(y)})));
-    if(drag==='target') setTrade(updateResult({...trade,targetPrice:priceForY(y)}));
-    if(drag==='entry'){const b=timeForX(x); setTrade(computeEmaTrail(updateResult({...trade,entryTime:tOf(b),entryPrice:priceForY(y)})));}
-    if(drag==='exit'){const b=timeForX(x); setTrade(updateResult({...trade,exitTime:tOf(b),exitPrice:priceForY(y),status:'closed'}));}
-  }
-
   return <div className="appShell">
     <header className="topbar"><div className="brand">Setup‑Miner</div><input className="tickerInput" value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())}/><button className="primary" onClick={()=>loadChart()}>Längsten Chart laden</button><span className="pill">m5 ab Oktober 2020</span><span className="pill">Rate heute: {settings.eodhd_rate_limit?.calls_today??0}/{settings.eodhd_rate_limit?.daily_call_limit??'—'}</span></header>
     <aside className="tools">{(['cursor','entry','exit','stop','target','line'] as const).map(t=><button key={t} className={tool===t?'active':''} onClick={()=>setTool(t)}>{t==='cursor'?'⌖':t==='entry'?'E':t==='exit'?'X':t==='stop'?'S':t==='target'?'T':'／'}</button>)}</aside>
-    <main className="chartWrap" onMouseMove={onOverlayMove} onMouseUp={()=>setDrag(null)} onMouseLeave={()=>setDrag(null)}><div ref={chartEl} className="chart"/><div className="legend">EMA10 · EMA20 · SMA50 · SMA200 · Volumen</div>{tradeBoxGeom&&<svg className="tradeOverlay"><rect className="profitBox" x={tradeBoxGeom.left} y={Math.min(tradeBoxGeom.top,tradeBoxGeom.entryY)} width={tradeBoxGeom.width} height={Math.abs(tradeBoxGeom.entryY-tradeBoxGeom.top)} onMouseDown={()=>setDrag('target')}/><rect className="riskBox" x={tradeBoxGeom.left} y={Math.min(tradeBoxGeom.entryY,tradeBoxGeom.bottom)} width={tradeBoxGeom.width} height={Math.abs(tradeBoxGeom.bottom-tradeBoxGeom.entryY)} onMouseDown={()=>setDrag('stop')}/><line className="tradeMid" x1={tradeBoxGeom.left} x2={tradeBoxGeom.right} y1={tradeBoxGeom.entryY} y2={tradeBoxGeom.entryY}/><circle className="handle" cx={tradeBoxGeom.left} cy={tradeBoxGeom.entryY} r="6" onMouseDown={()=>setDrag('entry')}/><circle className="handle" cx={tradeBoxGeom.right} cy={tradeBoxGeom.entryY} r="6" onMouseDown={()=>setDrag('exit')}/><circle className="handle stop" cx={tradeBoxGeom.left} cy={tradeBoxGeom.bottom} r="6" onMouseDown={()=>setDrag('stop')}/><circle className="handle target" cx={tradeBoxGeom.right} cy={tradeBoxGeom.top} r="6" onMouseDown={()=>setDrag('target')}/></svg>}{trade.entryPrice&&<div className="pnlLabel" style={{left:pnlLabel.x,top:pnlLabel.y}} onMouseDown={()=>setDrag('pnl')}>{trade.status==='closed'?'Closed':'Open'} PnL: {fmt(trade.resultR)}R · Stop: {fmt(trade.stopPrice)} {trade.stopoutReason?`· ${trade.stopoutReason}`:''}</div>}</main>
+    <main className="chartWrap"><div ref={chartEl} className="chart"/><div className="legend">EMA10 · EMA20 · SMA50 · SMA200 · Volumen</div></main>
     <aside className="panelRight"><section><h2>Chart</h2><label>Datum bis<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Cutoff ET<input value={cutoff} placeholder="10:00:00" onChange={e=>setCutoff(e.target.value)}/></label><div className="tfTabs">{timeframes.map(x=><button key={x.value} className={tf===x.value?'active':''} onClick={()=>setTf(x.value)}>{x.label}</button>)}</div><button onClick={checkM5}>m5 prüfen</button><button onClick={()=>loadChart()}>Chart laden</button></section>
     {error&&<pre className="error">{error}</pre>}{message&&<p className="message">{message}</p>}
-    <section><h2>Trade erfassen</h2><div className="tradeStatus">Status: <b>{trade.status}</b></div><label>Stop-Strategie<select value={trade.stopStrategy} onChange={e=>applyStopStrategy(e.target.value as StopStrategy)}><option value="first_candle_low">Low 1. Kerze</option><option value="entry_candle_low">Low Entry-Kerze</option><option value="fixed_percent">Fixer Prozent-Stop</option><option value="atr_multiple">ATR-Multiple</option><option value="ema10_trail">Initialstopp → EMA10-Trail</option><option value="manual">Manuell im Chart</option></select></label><label>Fix %<input type="number" value={trade.fixedPercent} onChange={e=>applyStopStrategy(trade.stopStrategy,Number(e.target.value),trade.atrMultiple)}/></label><label>ATR-Multiple<input type="number" step="0.1" value={trade.atrMultiple} onChange={e=>applyStopStrategy(trade.stopStrategy,trade.fixedPercent,Number(e.target.value))}/></label><div className="tradeBox"><div>Entry: <b>{fmt(trade.entryPrice)}</b></div><div>Stop: <b>{fmt(trade.stopPrice)}</b></div><div>Exit: <b>{fmt(trade.exitPrice)}</b></div><div>Risk/share: <b>{fmt(trade.riskPerShare)}</b></div><div>Ergebnis R: <b>{fmt(trade.resultR)}</b></div><div>Trail: <b>{trade.trailActive?'aktiv':'Initialstopp'}</b></div></div><button className="danger" onClick={resetTrade}>Trade zurücksetzen</button></section>
+    <section><h2>Trade erfassen</h2><div className="tradeStatus">Status: <b>{trade.status}</b></div><label>Stop-Strategie<select value={trade.stopStrategy} onChange={e=>applyStopStrategy(e.target.value as StopStrategy)}><option value="first_candle_low">Low 1. Kerze</option><option value="entry_candle_low">Low Entry-Kerze</option><option value="fixed_percent">Fixer Prozent-Stop</option><option value="atr_multiple">ATR-Multiple</option><option value="manual">Manuell im Chart</option></select></label><label>Fix %<input type="number" value={trade.fixedPercent} onChange={e=>applyStopStrategy(trade.stopStrategy,Number(e.target.value),trade.atrMultiple)}/></label><label>ATR-Multiple<input type="number" step="0.1" value={trade.atrMultiple} onChange={e=>applyStopStrategy(trade.stopStrategy,trade.fixedPercent,Number(e.target.value))}/></label><div className="tradeBox"><div>Entry: <b>{fmt(trade.entryPrice)}</b></div><div>Stop: <b>{fmt(trade.stopPrice)}</b></div><div>Exit: <b>{fmt(trade.exitPrice)}</b></div><div>Risk/share: <b>{fmt(trade.riskPerShare)}</b></div><div>Ergebnis R: <b>{fmt(trade.resultR)}</b></div></div><button className="danger" onClick={resetTrade}>Trade zurücksetzen</button></section>
     <section><h2>Setup-Daten</h2><p className="setupName">{setupName}</p>{[['label_class',['A+','Gut','Neutral','Fehlsignal','Bewusst geskippt']],['structure',structures],['trigger',triggers],['tactic',tactics],['level_name',levels]].map(([k,opts]:any)=><label key={k}>{k}<select value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}>{opts.map((o:string)=><option key={o}>{o}</option>)}</select></label>)}<label>Orderly<input type="number" min="1" max="5" value={form.orderly_rating} onChange={e=>setForm({...form,orderly_rating:e.target.value})}/></label><label><input type="checkbox" checked={form.result_is_hypothetical} onChange={e=>setForm({...form,result_is_hypothetical:e.target.checked})}/> hypothetisch</label><label>MFE R<input type="number" step="0.1" onChange={e=>setForm({...form,mfe_r:e.target.value})}/></label><label>MAE R<input type="number" step="0.1" onChange={e=>setForm({...form,mae_r:e.target.value})}/></label><textarea placeholder="Notiz" onChange={e=>setForm({...form,notes:e.target.value})}/><button className="primary" onClick={saveTrade}>Trade speichern</button></section>
     <section><h2>Kennzahlen</h2><table><tbody>{metricNames.map(n=><tr key={n} className={n==='lod_rule_valid'&&metrics[n]===false?'bad':''}><td>{n}</td><td>{fmt(metrics[n])}</td></tr>)}</tbody></table></section>
     <section><h2>Export</h2><a href={`${BASE}/api/exports/labels.csv`} target="_blank">CSV</a><a href={`${BASE}/api/exports/labels.json`} target="_blank">JSON</a></section></aside>
